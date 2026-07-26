@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@google-cloud/firestore": "^8.7.0",
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.18.1",
     "cors": "^2.8.6",

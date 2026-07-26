@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User } from 'lucide-react';
 import axios from 'axios';
+import toast, { Toaster } from 'react-hot-toast';
 
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -62,6 +63,7 @@ const LoginPage = ({ onLogin }) => {
         window.location.href = res.data.url;
       }
     } catch (err) {
+      toast.error("Failed to connect to LinkedIn");
       console.error("Failed to get auth URL", err);
     }
   };
@@ -149,8 +151,12 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
-    if (!topic) return;
+    if (!topic) {
+      toast.error("Please enter a topic first!");
+      return;
+    }
     setIsGenerating(true);
+    const toastId = toast.loading("AI is crafting your posts...");
     try {
       const res = await axios.post('/api/posts', {
         topic,
@@ -166,11 +172,13 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       } else {
         setQueue(prev => [...prev, res.data]);
       }
+      toast.success("Posts generated successfully!", { id: toastId });
     } catch (err) {
-      const errorMsg = err.response?.data?.error || "Error connecting to AI generation service. Please check the backend console.";
+      const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
+      toast.error(errorMsg, { id: toastId });
       setQueue(prev => [...prev, {
         id: Date.now(),
-        topic, size, tone, frequency,
+        topic, size, tone,
         content: `[ERROR] ${errorMsg}`,
         status: 'draft'
       }]);
@@ -181,8 +189,10 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const handleApprove = async (id, currentContent, scheduledTime) => {
     try {
       await axios.put(`/api/posts/${id}/approve`, { content: currentContent, scheduledTime });
+      toast.success("Post successfully scheduled!");
       fetchQueue();
     } catch (err) {
+      toast.error("Failed to schedule post");
       setQueue(prev => prev.map(p => p.id === id ? { ...p, status: 'approved', scheduledTime: scheduledTime ? new Date(scheduledTime) : new Date() } : p));
     }
   };
@@ -194,8 +204,10 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const cancelSchedule = async (id) => {
     try {
       await axios.put(`/api/posts/${id}/cancel`);
+      toast.success("Schedule cancelled");
       fetchQueue();
     } catch (err) {
+      toast.error("Failed to cancel schedule");
       setQueue(prev => prev.map(p => p.id === id ? { ...p, status: 'draft', scheduledTime: null } : p));
     }
   };
@@ -555,7 +567,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                                   onClick={() => {
                                     const timeVal = document.getElementById(`time-${post.id}`).value;
                                     if (!timeVal) {
-                                      alert("Please select a date and time before scheduling!");
+                                      toast.error("Please select a date and time before scheduling!");
                                       return;
                                     }
                                     handleApprove(post.id, document.getElementById(`content-${post.id}`).value, timeVal);
@@ -634,8 +646,18 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
+    return (
+      <>
+        <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+        <LoginPage onLogin={handleLogin} />
+      </>
+    );
   }
 
-  return <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />;
+  return (
+    <>
+      <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+      <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />
+    </>
+  );
 }

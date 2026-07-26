@@ -6,23 +6,18 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 const path = require('path');
 const { initScheduler } = require('./scheduler');
+const db = require('./dbService');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// For this MVP, we simulate a database connection.
-// mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-//   .then(() => console.log('MongoDB Connected'))
-//   .catch(err => console.error(err));
-
-// In-memory mock database for scheduled posts to review
-const postsQueue = [];
+// Auth state (still in-memory for MVP, can be moved to Firestore later)
 let userAccessToken = null;
 let linkedInProfile = null;
 
 // Start the scheduler
-initScheduler(postsQueue, () => userAccessToken, () => linkedInProfile?.id);
+initScheduler(() => userAccessToken, () => linkedInProfile?.id);
 
 // LinkedIn OAuth Routes
 app.get('/api/auth/linkedin', (req, res) => {
@@ -113,8 +108,10 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/posts', (req, res) => {
-  res.json(postsQueue);
+app.get('/api/posts', async (req, res) => {
+  const posts = await db.getPosts();
+  // Sort posts by ID descending (newest first)
+  res.json(posts.sort((a, b) => b.id - a.id));
 });
 
 app.post('/api/posts', async (req, res) => {
@@ -162,7 +159,7 @@ app.post('/api/posts', async (req, res) => {
       scheduledTime: null
     };
 
-    postsQueue.push(newPost);
+    await db.savePost(newPost);
     return res.status(201).json(newPost);
   }
 
@@ -217,7 +214,7 @@ Include 2-3 relevant hashtags at the bottom of each post. Do not wrap the respon
       };
     });
 
-    postsQueue.push(...newPosts);
+    await db.savePosts(newPosts);
     res.status(201).json(newPosts);
   } catch (error) {
     console.error("Gemini Error:", error);
@@ -229,31 +226,30 @@ const { publishToLinkedIn } = require('./linkedinService');
 
 app.put('/api/posts/:id/approve', async (req, res) => {
   const { id } = req.params;
-  const post = postsQueue.find(p => p.id == id);
-  if (post) {
-    post.status = 'approved';
-    post.content = req.body.content || post.content;
-    
-    if (req.body.scheduledTime) {
-      post.scheduledTime = new Date(req.body.scheduledTime);
-    } else {
-      // Fallback if they somehow don't select a time (default to 2 hours from now)
-      post.scheduledTime = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    }
-    
-    res.json(post);
+  const scheduledTime = req.body.scheduledTime ? new Date(req.body.scheduledTime) : new Date(Date.now() + 2 * 60 * 60 * 1000);
+  
+  const updatedPost = await db.updatePost(id, {
+    status: 'approved',
+    content: req.body.content || undefined, // keep existing if undefined
+    scheduledTime: scheduledTime.toISOString() // Firestore handles ISO strings or Dates better, let's just save ISO string
+  });
+  
+  if (updatedPost) {
+    res.json(updatedPost);
   } else {
     res.status(404).json({ error: "Post not found" });
   }
 });
 
-app.put('/api/posts/:id/cancel', (req, res) => {
+app.put('/api/posts/:id/cancel', async (req, res) => {
   const { id } = req.params;
-  const post = postsQueue.find(p => p.id == id);
-  if (post) {
-    post.status = 'draft';
-    post.scheduledTime = null;
-    res.json(post);
+  const updatedPost = await db.updatePost(id, {
+    status: 'draft',
+    scheduledTime: null
+  });
+  
+  if (updatedPost) {
+    res.json(updatedPost);
   } else {
     res.status(404).json({ error: "Post not found" });
   }
