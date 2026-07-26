@@ -211,10 +211,10 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             <div className="space-y-6">
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Global AI Context (Work History)</label>
-                <p className="text-xs text-slate-500 mb-3">LinkedIn's API prevents third-party apps from automatically reading your work history. Paste it here once, and the AI will permanently remember it in the background.</p>
+                <p className="text-xs text-slate-300 mb-3">LinkedIn's API prevents third-party apps from automatically reading your work history. Paste it here once, and the AI will permanently remember it in the background.</p>
                 <textarea 
                   placeholder="Paste your resume summary, bio, or work history here..." 
-                  className="w-full p-4 bg-white/[0.02] border border-white/5 rounded-xl text-[14px] text-white placeholder-slate-600 focus:border-cyan-500/50 min-h-[150px] resize-y"
+                  className="w-full p-4 bg-white/[0.02] border border-white/5 rounded-xl text-[14px] text-white placeholder-slate-400 focus:border-cyan-500/50 min-h-[150px] resize-y"
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                 />
@@ -606,7 +606,7 @@ export default function App() {
 
   const checkAuthStatus = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/auth/status');
+      const res = await axios.get('/api/auth/status');
       if (res.data.connected) {
         setIsAuthenticated(true);
         setUserProfile(res.data.profile);
@@ -623,7 +623,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:5000/api/auth/logout');
+      await axios.post('/api/auth/logout');
       setIsAuthenticated(false);
       setUserProfile(null);
       // Remove any OAuth URL params so we don't automatically log back in on refresh
