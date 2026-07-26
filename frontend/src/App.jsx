@@ -413,7 +413,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                         <input 
                           type="datetime-local" 
                           style={{ colorScheme: 'dark' }}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[14px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer"
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[14px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
                           value={baseTime}
                           onChange={(e) => setBaseTime(e.target.value)}
                         />
@@ -542,7 +542,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                                   id={`time-${post.id}`} 
                                   defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
                                   style={{ colorScheme: 'dark' }}
-                                  className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer"
+                                  className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
                                 />
                                 <button 
                                   onClick={() => discardDraft(post.id)}
