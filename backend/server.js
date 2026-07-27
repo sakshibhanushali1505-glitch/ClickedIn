@@ -16,32 +16,37 @@ app.use(express.json());
 let userAccessToken = null;
 let linkedInProfile = null;
 
+// Determine environment URLs
+const isProd = process.env.NODE_ENV === 'production';
+const FRONTEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5173';
+const BACKEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5000';
+
 // Start the scheduler
 initScheduler(() => userAccessToken, () => linkedInProfile?.id);
 
 // LinkedIn OAuth Routes
 app.get('/api/auth/linkedin', (req, res) => {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
-  
+
   // If no real Client ID is provided, simulate the OAuth flow locally (Demo Mode)
   if (!clientId || clientId === 'mock_client_id') {
     console.log("[Auth] Demo Mode: Bypassing real LinkedIn OAuth since no CLIENT_ID is set.");
-    return res.json({ url: 'https://clickedin.hookstep.in/api/auth/linkedin/callback?code=demo_auth_code_999' });
+    return res.json({ url: `${BACKEND_URL}/api/auth/linkedin/callback?code=demo_auth_code_999` });
   }
 
-  const redirectUri = encodeURIComponent('https://clickedin.hookstep.in/api/auth/linkedin/callback');
+  const redirectUri = encodeURIComponent(`${BACKEND_URL}/api/auth/linkedin/callback`);
   const scope = encodeURIComponent('w_member_social profile openid');
   const state = 'random_csrf_token_123';
-  
+
   const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
   res.json({ url: authUrl });
 });
 
 app.get('/api/auth/linkedin/callback', async (req, res) => {
   const { code, error } = req.query;
-  
+
   if (error) {
-    return res.redirect('https://clickedin.hookstep.in/?error=auth_failed');
+    return res.redirect(`${FRONTEND_URL}/?error=auth_failed`);
   }
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
@@ -51,12 +56,12 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
   if (!clientId || !clientSecret || clientId === 'mock_client_id') {
     userAccessToken = 'mock_oauth_token_' + code;
     linkedInProfile = { name: "Demo User", id: "urn:li:person:12345" };
-    return res.redirect('https://clickedin.hookstep.in/?success=linkedin_connected');
+    return res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
   }
 
   try {
-    const redirectUri = 'https://clickedin.hookstep.in/api/auth/linkedin/callback';
-    
+    const redirectUri = `${BACKEND_URL}/api/auth/linkedin/callback`;
+
     // 1. Exchange authorization code for Access Token
     const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
       params: {
@@ -80,17 +85,17 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
       }
     });
 
-    linkedInProfile = { 
-      name: profileResponse.data.name, 
+    linkedInProfile = {
+      name: profileResponse.data.name,
       id: profileResponse.data.sub,
       pictureUrl: profileResponse.data.picture
     };
-    
+
     // Redirect back to dashboard with success
-    res.redirect('https://clickedin.hookstep.in/?success=linkedin_connected');
+    res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
   } catch (err) {
     console.error("Token exchange failed", err.response?.data || err.message);
-    res.redirect('https://clickedin.hookstep.in/?error=token_failed');
+    res.redirect(`${FRONTEND_URL}/?error=token_failed`);
   }
 });
 
@@ -116,11 +121,11 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   const { topic, context, size, tone, frequency } = req.body;
-  
+
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
     console.log("[AI] No GEMINI_API_KEY found. Falling back to robust mock generation engine.");
     let generatedContent = "";
-    
+
     if (tone === "Professional") {
       if (size === "Short") {
         generatedContent = `Just wrapped up an analysis on ${topic}. The enterprise impact is undeniable. Have you adapted your strategy yet?\n\n#${topic.replace(/\s/g, '')} #ProfessionalGrowth`;
@@ -169,7 +174,7 @@ app.post('/api/posts', async (req, res) => {
 
     const postCount = parseInt(req.body.count) || 1;
     let prompt = `Write ${postCount} highly engaging, distinct LinkedIn post(s) about "${topic}".\n`;
-    
+
     if (context && context.trim() !== '') {
       prompt += `\nThe author's professional context/background is: "${context}". Please weave this personal perspective and industry experience into the post organically. You may mention the author's professional title or role, but DO NOT repeatedly name-drop the author's company name. Mention the company name at most once, or preferably speak from the perspective of an insider without explicitly stating the company name at all.\n`;
     }
@@ -177,10 +182,12 @@ app.post('/api/posts', async (req, res) => {
     prompt += `
 Focus specifically on the current, ongoing market situation and recent trends regarding this topic. The content MUST feel fresh, highly relevant to today's industry climate, and offer unique insights rather than generic advice.
 
-Tone Requirements: ${tone} (If Professional, be authoritative. If Casual, use emojis and conversational language. If Thought Leadership, be contrarian and visionary).
+Tone Requirements: ${tone} (If Professional, be authoritative. If Casual, use conversational language. If Thought Leadership, be contrarian and visionary).
 Length Requirements: ${size} (If Short, strictly 1-2 brief paragraphs. If Medium, strictly 3-4 paragraphs. If Long, strictly 5-7 paragraphs with deep insights and structural formatting like lists).
 
-CRITICAL RULE: DO NOT use the long em-dash character (—) or en-dash (–) anywhere in your response under any circumstances. If you need to separate clauses or break a sentence, use commas, periods, or a standard short hyphen (-).
+CRITICAL RULE 1: DO NOT use the long em-dash character (—) or en-dash (–) anywhere in your response under any circumstances. If you need to separate clauses or break a sentence, use commas, periods, or a standard short hyphen (-).
+
+CRITICAL RULE 2: If the Tone is "Professional" or "Thought Leadership", you are STRICTLY FORBIDDEN from using ANY emojis anywhere in the response. No exceptions. If the Tone is "Casual", you MAY use emojis. The current Tone for this request is "${tone}".
 
 Include 2-3 relevant hashtags at the bottom of each post. Do not wrap the response in quotes or include any preamble.`;
 
@@ -190,12 +197,12 @@ Include 2-3 relevant hashtags at the bottom of each post. Do not wrap the respon
 
     const result = await model.generateContent(prompt);
     const generatedContent = result.response.text().trim();
-    
+
     let contents = [generatedContent];
     if (postCount > 1) {
       contents = generatedContent.split('---POST_SEPARATOR---').map(c => c.trim()).filter(c => c);
     }
-    
+
     const baseTime = req.body.baseTime ? new Date(req.body.baseTime) : null;
     const hoursGap = parseInt(req.body.hoursGap) || 0;
     const minutesGap = parseInt(req.body.minutesGap) || 0;
@@ -227,13 +234,13 @@ const { publishToLinkedIn } = require('./linkedinService');
 app.put('/api/posts/:id/approve', async (req, res) => {
   const { id } = req.params;
   const scheduledTime = req.body.scheduledTime ? new Date(req.body.scheduledTime) : new Date(Date.now() + 2 * 60 * 60 * 1000);
-  
+
   const updatedPost = await db.updatePost(id, {
     status: 'approved',
     content: req.body.content || undefined, // keep existing if undefined
     scheduledTime: scheduledTime.toISOString() // Firestore handles ISO strings or Dates better, let's just save ISO string
   });
-  
+
   if (updatedPost) {
     res.json(updatedPost);
   } else {
@@ -247,7 +254,7 @@ app.put('/api/posts/:id/cancel', async (req, res) => {
     status: 'draft',
     scheduledTime: null
   });
-  
+
   if (updatedPost) {
     res.json(updatedPost);
   } else {

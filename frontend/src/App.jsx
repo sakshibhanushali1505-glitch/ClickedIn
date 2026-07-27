@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User } from 'lucide-react';
+import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers } from 'lucide-react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -176,7 +176,36 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       fetchQueue();
     } catch (err) {
       toast.error("Failed to schedule post");
-      setQueue(prev => prev.map(p => p.id === id ? { ...p, status: 'approved', scheduledTime: scheduledTime ? new Date(scheduledTime) : new Date() } : p));
+    }
+  };
+
+  const handleApproveAll = async () => {
+    const drafts = queue.filter(p => p.status === 'draft');
+    if (drafts.length === 0) return;
+    
+    const batchInputEl = document.getElementById('batch-time');
+    let startTimeStr = batchInputEl ? batchInputEl.value : null;
+    
+    if (!startTimeStr) {
+      toast.error("Please set a master start time for the batch!");
+      return;
+    }
+    
+    const baseTimeObj = new Date(startTimeStr);
+    
+    try {
+      await Promise.all(drafts.map((post, index) => {
+        const scheduledTimeObj = new Date(baseTimeObj.getTime() + (index * ((hoursGap * 60) + minutesGap) * 60 * 1000));
+        return axios.put(`/api/posts/${post.id}/approve`, {
+          content: document.getElementById(`content-${post.id}`).value,
+          scheduledTime: scheduledTimeObj.toISOString()
+        });
+      }));
+      toast.success(`Successfully scheduled ${drafts.length} posts!`);
+      fetchQueue();
+    } catch (err) {
+      toast.error("Failed to approve batch");
+      console.error(err);
     }
   };
 
@@ -191,7 +220,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       fetchQueue();
     } catch (err) {
       toast.error("Failed to cancel schedule");
-      setQueue(prev => prev.map(p => p.id === id ? { ...p, status: 'draft', scheduledTime: null } : p));
     }
   };
 
@@ -260,9 +288,18 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
              <div className="relative">
                <button 
                  onClick={() => setShowSettings(!showSettings)}
-                 className="px-4 text-slate-400 hover:text-cyan-400 transition-colors h-full flex items-center"
+                 className="flex items-center px-2 space-x-3 text-slate-400 hover:text-cyan-400 transition-colors h-full"
                >
                  <Settings size={16} className={showSettings ? "text-cyan-400 rotate-90 transition-all" : "transition-all"} />
+                 <div className="relative group cursor-pointer">
+                   {userProfile?.pictureUrl ? (
+                     <img src={userProfile.pictureUrl} alt="Avatar" className="w-9 h-9 rounded-full object-cover border-2 border-white/10 group-hover:border-cyan-500/50 transition-colors" />
+                   ) : (
+                     <div className="w-9 h-9 rounded-full bg-cyan-500/20 text-cyan-400 text-sm font-bold flex items-center justify-center border-2 border-white/10 group-hover:border-cyan-500/50 transition-colors uppercase">
+                       {userProfile?.name ? userProfile.name.charAt(0) : '?'}
+                     </div>
+                   )}
+                 </div>
                </button>
                
                {showSettings && (
@@ -284,16 +321,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                        <LogOut size={16} />
                        <span>Disconnect Account</span>
                     </button>
-                 </div>
-               )}
-             </div>
-             
-             <div className="relative group cursor-pointer">
-               {userProfile?.pictureUrl ? (
-                 <img src={userProfile.pictureUrl} alt="Avatar" className="w-9 h-9 rounded-full object-cover border-2 border-white/10 group-hover:border-cyan-500/50 transition-colors" />
-               ) : (
-                 <div className="w-9 h-9 rounded-full bg-cyan-500/20 text-cyan-400 text-sm font-bold flex items-center justify-center border-2 border-white/10 group-hover:border-cyan-500/50 transition-colors uppercase">
-                   {userProfile?.name ? userProfile.name.charAt(0) : '?'}
                  </div>
                )}
              </div>
@@ -401,64 +428,25 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                     </div>
                   </div>
                   
-                  {postCount > 1 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Start Date & Time</label>
-                        <input 
-                          type="datetime-local" 
-                          style={{ colorScheme: 'dark' }}
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[14px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
-                          value={baseTime}
-                          onChange={(e) => setBaseTime(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Gap Between Posts</label>
-                        <div className="flex space-x-4">
-                          <div className="flex-1">
-                            <label className="block text-[10px] text-slate-500 mb-1">Hours</label>
-                            <input 
-                              type="number" 
-                              min="0"
-                              max="72"
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[14px] text-white focus:outline-none focus:border-cyan-500/50"
-                              value={hoursGap}
-                              onChange={(e) => setHoursGap(Number(e.target.value))}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="block text-[10px] text-slate-500 mb-1">Minutes</label>
-                            <input 
-                              type="number" 
-                              min="0"
-                              max="59"
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[14px] text-white focus:outline-none focus:border-cyan-500/50"
-                              value={minutesGap}
-                              onChange={(e) => setMinutesGap(Number(e.target.value))}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+
                 </div>
 
                 <button 
                   onClick={handleGenerate}
                   disabled={isGenerating || !topic}
-                  className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase"
+                  className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 hover:from-cyan-400 hover:via-blue-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase relative overflow-hidden group"
                 >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none skew-x-12"></div>
                   {isGenerating ? (
-                    <span className="animate-pulse flex items-center space-x-2">
+                    <span className="animate-pulse flex items-center space-x-2 relative z-10">
                       <Sparkles size={20} className="animate-spin" />
                       <span>Synthesizing Draft...</span>
                     </span>
                   ) : (
-                    <>
+                    <div className="flex items-center space-x-2 relative z-10">
                       <Sparkles size={20} />
                       <span>Generate Content Queue</span>
-                    </>
+                    </div>
                   )}
                 </button>
                 
@@ -494,6 +482,55 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                   </div>
                 ) : (
                    <div className="space-y-6">
+                      {queue.filter(p => p.status === 'draft').length > 1 && (
+                        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 flex flex-col xl:flex-row items-center justify-between shadow-[inset_0_1px_3px_rgba(255,255,255,0.05)] mb-4">
+                          <div className="mb-4 xl:mb-0 xl:mr-6 flex-1">
+                            <h3 className="text-white font-bold text-[15px] tracking-wide mb-1 flex items-center"><Layers size={16} className="mr-2 text-cyan-400" /> Batch Schedule All Drafts</h3>
+                            <p className="text-slate-400 text-[13px]">Set the master start time and the gap between each subsequent post.</p>
+                          </div>
+                          
+                          <div className="flex flex-col sm:flex-row items-end space-y-4 sm:space-y-0 sm:space-x-4">
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Start Time</label>
+                              <input 
+                                type="datetime-local" 
+                                id="batch-time"
+                                style={{ colorScheme: 'dark' }}
+                                className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto"
+                              />
+                            </div>
+                            
+                            <div className="flex space-x-2">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours</label>
+                                <input 
+                                  type="number" min="0" max="72"
+                                  className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center"
+                                  value={hoursGap.toString()}
+                                  onChange={(e) => setHoursGap(Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins</label>
+                                <input 
+                                  type="number" min="0" max="59"
+                                  className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center"
+                                  value={minutesGap.toString()}
+                                  onChange={(e) => setMinutesGap(Number(e.target.value))}
+                                />
+                              </div>
+                            </div>
+
+                            <button 
+                              onClick={handleApproveAll}
+                              className="w-full sm:w-auto h-[44px] flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-sm font-bold px-6 rounded-xl transition-all shadow-[0_4px_15px_rgba(6,182,212,0.3)] hover:shadow-[0_6px_20px_rgba(6,182,212,0.5)] border border-cyan-400/20"
+                            >
+                              <Send size={16} />
+                              <span>Approve All ({queue.filter(p => p.status === 'draft').length})</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {queue.map(post => (
                         <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
@@ -537,7 +574,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                                   id={`time-${post.id}`} 
                                   defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
                                   style={{ colorScheme: 'dark' }}
-                                  className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
+                                  className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
                                 />
                                 <button 
                                   onClick={() => discardDraft(post.id)}
@@ -548,7 +585,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    const timeVal = document.getElementById(`time-${post.id}`).value;
+                                    const inputEl = document.getElementById(`time-${post.id}`);
+                                    const timeVal = inputEl ? inputEl.value : null;
+                                    
                                     if (!timeVal) {
                                       toast.error("Please select a date and time before scheduling!");
                                       return;

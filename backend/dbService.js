@@ -4,12 +4,19 @@ let db = null;
 let useFirestore = false;
 let memoryPosts = []; // Fallback
 
-try {
-  db = new Firestore({ projectId: 'jr-consulting-co' });
-  useFirestore = true;
-  console.log("Firestore initialized successfully.");
-} catch (err) {
-  console.warn("Could not initialize Firestore, falling back to in-memory storage.");
+const isProduction = process.env.NODE_ENV === 'production';
+const hasCredentials = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+if (isProduction || hasCredentials) {
+  try {
+    db = new Firestore({ projectId: 'jr-consulting-co' });
+    useFirestore = true;
+    console.log("Firestore initialized successfully.");
+  } catch (err) {
+    console.warn("Could not initialize Firestore, falling back to in-memory storage.", err);
+  }
+} else {
+  console.log("Running locally without Google credentials. Falling back to in-memory storage.");
 }
 
 async function getPosts() {

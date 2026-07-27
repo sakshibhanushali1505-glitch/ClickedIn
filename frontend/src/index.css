@@ -1,17 +1,20 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 @layer base {
   body {
-    @apply bg-[#050505] text-slate-300 font-sans antialiased selection:bg-cyan-500/30;
+    @apply bg-[#050505] text-slate-300 antialiased selection:bg-cyan-500/30;
+    font-family: 'Plus Jakarta Sans', sans-serif;
     background-image: 
-      radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
-      radial-gradient(circle at 85% 30%, rgba(6, 182, 212, 0.08) 0%, transparent 50%);
+      radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 100% 0%, rgba(6, 182, 212, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 40%);
     background-attachment: fixed;
   }
 }
 
 .glass-card {
-  @apply bg-white/[0.02] backdrop-blur-2xl border border-white/[0.05] shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-3xl relative;
+  @apply bg-[#0c0d12]/80 backdrop-blur-3xl border border-white/[0.05] shadow-[0_8px_32px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.05)] rounded-3xl relative transition-all duration-500 hover:border-white/[0.1] hover:shadow-[0_15px_40px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.08)];
 }
 
 .glass-card::before {
@@ -20,11 +23,11 @@
 }
 
 .glass-input {
-  @apply bg-white/[0.02] border border-white/[0.08] rounded-2xl focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 focus:outline-none transition-all duration-300 hover:bg-white/[0.04];
+  @apply bg-black/40 border border-white/[0.08] rounded-2xl focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 focus:outline-none transition-all duration-300 hover:bg-black/60 shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)];
 }
 
 .glass-btn {
-  @apply flex items-center justify-center space-x-2 py-3 rounded-2xl border border-white/[0.08] text-sm font-semibold transition-all duration-300;
+  @apply flex items-center justify-center space-x-2 py-3 rounded-2xl border border-white/[0.08] text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg;
 }
 
 /* Hide scrollbar for Tone buttons container */
@@ -38,22 +41,32 @@
 
 /* Smooth fade in animation */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(15px); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.5s ease-out forwards;
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Force Calendar Icon to be white on dark backgrounds */
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-    filter: invert(1);
-    opacity: 0.7;
+    opacity: 0.8;
     cursor: pointer;
     transition: opacity 0.2s;
 }
 
 input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
-    opacity: 1;
+    opacity: 0.9;
+}
+
+/* Hide native number input arrows/spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
 }
