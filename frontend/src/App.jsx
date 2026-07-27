@@ -467,6 +467,61 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 </div>
               </div>
               
+              {/* Batch Schedule Settings - Permanently Visible */}
+              <div className="px-8 pt-6 pb-2 border-b border-white/[0.05]">
+                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-5 flex flex-col xl:flex-row items-center justify-between shadow-lg">
+                  <div className="mb-4 xl:mb-0 xl:mr-6 flex-1">
+                    <h3 className="text-white font-bold text-[14px] tracking-wide mb-1 flex items-center">
+                      <Layers size={16} className="mr-2 text-cyan-400" /> 
+                      Batch Scheduling Rules
+                    </h3>
+                    <p className="text-slate-400 text-[12px]">Set your master start time and gap. This will apply when you click Approve All.</p>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-end space-y-4 sm:space-y-0 sm:space-x-4">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Start Time</label>
+                      <input 
+                        type="datetime-local" 
+                        id="batch-time"
+                        style={{ colorScheme: 'dark' }}
+                        className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto border-white/10"
+                      />
+                    </div>
+                    
+                    <div className="flex space-x-2">
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours</label>
+                        <input 
+                          type="number" min="0" max="72"
+                          className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
+                          value={hoursGap.toString()}
+                          onChange={(e) => setHoursGap(Number(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins</label>
+                        <input 
+                          type="number" min="0" max="59"
+                          className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
+                          value={minutesGap.toString()}
+                          onChange={(e) => setMinutesGap(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={handleApproveAll}
+                      disabled={queue.filter(p => p.status === 'draft').length === 0}
+                      className="w-full sm:w-auto h-[44px] flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-sm font-bold px-6 rounded-xl transition-all shadow-[0_4px_15px_rgba(6,182,212,0.3)] hover:shadow-[0_6px_20px_rgba(6,182,212,0.5)] border border-cyan-400/20 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <Send size={16} />
+                      <span>Approve All</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="p-8 flex-1 flex flex-col">
                 {queue.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
@@ -482,55 +537,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                   </div>
                 ) : (
                    <div className="space-y-6">
-                      {queue.filter(p => p.status === 'draft').length > 1 && (
-                        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 flex flex-col xl:flex-row items-center justify-between shadow-[inset_0_1px_3px_rgba(255,255,255,0.05)] mb-4">
-                          <div className="mb-4 xl:mb-0 xl:mr-6 flex-1">
-                            <h3 className="text-white font-bold text-[15px] tracking-wide mb-1 flex items-center"><Layers size={16} className="mr-2 text-cyan-400" /> Batch Schedule All Drafts</h3>
-                            <p className="text-slate-400 text-[13px]">Set the master start time and the gap between each subsequent post.</p>
-                          </div>
-                          
-                          <div className="flex flex-col sm:flex-row items-end space-y-4 sm:space-y-0 sm:space-x-4">
-                            <div>
-                              <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Start Time</label>
-                              <input 
-                                type="datetime-local" 
-                                id="batch-time"
-                                style={{ colorScheme: 'dark' }}
-                                className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto"
-                              />
-                            </div>
-                            
-                            <div className="flex space-x-2">
-                              <div>
-                                <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours</label>
-                                <input 
-                                  type="number" min="0" max="72"
-                                  className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center"
-                                  value={hoursGap.toString()}
-                                  onChange={(e) => setHoursGap(Number(e.target.value))}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins</label>
-                                <input 
-                                  type="number" min="0" max="59"
-                                  className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center"
-                                  value={minutesGap.toString()}
-                                  onChange={(e) => setMinutesGap(Number(e.target.value))}
-                                />
-                              </div>
-                            </div>
-
-                            <button 
-                              onClick={handleApproveAll}
-                              className="w-full sm:w-auto h-[44px] flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-sm font-bold px-6 rounded-xl transition-all shadow-[0_4px_15px_rgba(6,182,212,0.3)] hover:shadow-[0_6px_20px_rgba(6,182,212,0.5)] border border-cyan-400/20"
-                            >
-                              <Send size={16} />
-                              <span>Approve All ({queue.filter(p => p.status === 'draft').length})</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
                       {queue.map(post => (
                         <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
