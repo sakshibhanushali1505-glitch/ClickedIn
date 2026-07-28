@@ -107,7 +107,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const [size, setSize] = useState('Medium');
   const [tone, setTone] = useState('Professional');
   const [postCount, setPostCount] = useState(1);
-  const [baseTime, setBaseTime] = useState('');
   const [hoursGap, setHoursGap] = useState(4);
   const [minutesGap, setMinutesGap] = useState(0);
   
@@ -155,7 +154,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         context,
         size, tone, 
         count: postCount,
-        baseTime,
         hoursGap,
         minutesGap
       });
@@ -164,18 +162,12 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       } else {
         setQueue(prev => [...prev, res.data]);
       }
-      toast.success("Posts generated successfully!", { id: toastId });
+      toast.success(`${postCount} post(s) generated successfully!`, { id: toastId });
       // Switch seamlessly to Timing & Batch Schedule tab to view and schedule generated posts
       setActiveTab('schedule');
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
-      setQueue(prev => [...prev, {
-        id: Date.now(),
-        topic, size, tone,
-        content: `[ERROR] ${errorMsg}`,
-        status: 'draft'
-      }]);
     }
     setIsGenerating(false);
   };
@@ -192,7 +184,10 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 
   const handleApproveAll = async () => {
     const drafts = queue.filter(p => p.status === 'draft');
-    if (drafts.length === 0) return;
+    if (drafts.length === 0) {
+      toast.error("No pending drafts to approve!");
+      return;
+    }
     
     const batchInputEl = document.getElementById('batch-time');
     let startTimeStr = batchInputEl ? batchInputEl.value : null;
@@ -212,7 +207,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
           scheduledTime: scheduledTimeObj.toISOString()
         });
       }));
-      toast.success(`Successfully scheduled ${drafts.length} posts!`);
+      toast.success(`Successfully scheduled ${drafts.length} post(s)!`);
       fetchQueue();
     } catch (err) {
       toast.error("Failed to approve batch");
@@ -221,13 +216,13 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   };
 
   const discardDraft = async (id) => {
+    setQueue(prev => prev.filter(p => p.id !== id));
+    toast.success("Post deleted successfully");
     try {
       await axios.delete(`/api/posts/${id}`);
-      toast.success("Post deleted successfully");
-      fetchQueue();
     } catch (err) {
-      setQueue(prev => prev.filter(p => p.id !== id));
-      toast.success("Post deleted");
+      console.error("Delete error", err);
+      fetchQueue();
     }
   };
 
@@ -300,7 +295,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <input 
                         type="datetime-local" 
                         id={`time-${post.id}`} 
-                        defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                        defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                         style={{ colorScheme: 'dark' }}
                         className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
                       />
@@ -622,6 +617,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <input 
                         type="datetime-local" 
                         id="batch-time"
+                        defaultValue={new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                         style={{ colorScheme: 'dark' }}
                         className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto border-white/10"
                       />

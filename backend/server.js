@@ -124,48 +124,61 @@ app.post('/api/posts', async (req, res) => {
 
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
     console.log("[AI] No GEMINI_API_KEY found. Falling back to robust mock generation engine.");
-    let generatedContent = "";
+    const postCount = parseInt(req.body.count) || 1;
+    const createdPosts = [];
 
-    if (tone === "Professional") {
-      if (size === "Short") {
-        generatedContent = `Just wrapped up an analysis on ${topic}. The enterprise impact is undeniable. Have you adapted your strategy yet?\n\n#${topic.replace(/\s/g, '')} #ProfessionalGrowth`;
-      } else if (size === "Long") {
-        generatedContent = `The landscape of ${topic} is undergoing a fundamental shift, and many organizations are caught entirely off guard.\n\nOver the past quarter, we've analyzed significant developments that redefine how enterprise professionals must approach this space. Strategic alignment is no longer optional—it's an absolute imperative. Organizations that fail to aggressively adapt their operational models to ${topic} will find themselves at a severe and compounding competitive disadvantage.\n\nWe are observing three macro-trends driving this transformation:\n\n1. Innovation Velocity: The speed at which new methodologies are entering the market is unprecedented. Legacy systems cannot keep up without modular overhauls.\n2. Regulatory & Compliance Frameworks: Safety remains a top priority, but navigating the new compliance architectures requires dedicated cross-functional alignment.\n3. Lowering Barriers to Entry: New competitors are leveraging turnkey solutions to bypass traditional gatekeepers.\n\nTo navigate this, leadership teams must pivot from reactive troubleshooting to proactive architectural design. This means investing in continuous learning protocols and re-evaluating core KPIs.\n\nIf your organization is still treating ${topic} as a secondary initiative, you are already falling behind. The time to allocate dedicated resources and establish clear, measurable objectives is right now.\n\nWhat are your key priorities regarding ${topic} this year? How are you measuring success? Let's discuss in the comments below.\n\n#${topic.replace(/\s/g, '')} #Leadership #Strategy #Enterprise #DigitalTransformation #Innovation`;
-      } else {
-        generatedContent = `The conversation around ${topic} is evolving faster than ever before. We are witnessing a clear paradigm shift in how leading organizations approach this challenge on a daily basis.\n\nIt's clear that adapting to these changes is no longer just an option, but critical for long-term success and market positioning. Companies that integrate ${topic} deeply into their core workflows are seeing measurable gains in operational efficiency and employee engagement across the board.\n\nHowever, implementation remains the biggest hurdle. Without top-down alignment, even the best strategies falter. It requires a concerted effort to upskill teams and redefine traditional metrics of success.\n\nHow is your team handling the transition to ${topic}? Are you seeing similar benefits, or facing unexpected roadblocks?\n\n#${topic.replace(/\s/g, '')} #BusinessStrategy #ProfessionalDevelopment #Growth`;
+    for (let i = 0; i < postCount; i++) {
+      let generatedContent = "";
+      const angleSuffix = i === 1 ? " (Strategic Perspective)" : i === 2 ? " (Future & Scaling)" : "";
+      
+      let contextIntro = "";
+      if (context && context.trim() !== '') {
+        contextIntro = `Drawing from my experience (${context.slice(0, 60).trim()}...), `;
       }
-    } else if (tone === "Casual") {
-      if (size === "Short") {
-        generatedContent = `Been thinking a lot about ${topic} lately! 🤔 What's everyone's take on this?\n\n#${topic.replace(/\s/g, '')}`;
-      } else if (size === "Long") {
-        generatedContent = `Okay, we really need to talk about ${topic}. 🚀\n\nIt's crazy how fast things are moving right now. Anyone else feeling like they constantly need to catch up? I've been experimenting with a few new approaches over the last month, trying to figure out what actually works and what's just absolute noise.\n\nHonestly, the biggest realization I've had is that you cannot force it. You have to lean into the chaos, embrace the learning curve, and find your own unique rhythm. Early on, I was trying to copy what all the "gurus" were doing, but it just led to burnout.\n\nSo, I changed my approach. I started focusing on small, daily micro-habits related to ${topic}. Instead of trying to boil the ocean, I just focused on getting 1% better every single day. The compounding effect over just four weeks has been genuinely mind-blowing.\n\nIf you're feeling overwhelmed by it all, take a step back. Remember why you started exploring this in the first place. Reconnect with that initial curiosity.\n\nI'm putting together a little behind-the-scenes guide on my exact process and the mistakes I made so you don't have to. \n\nLet me know your favorite resources below! What's working for you? 👇\n\n#${topic.replace(/\s/g, '')} #TechCommunity #Thoughts #Growth #LearningInPublic`;
+
+      if (tone === "Professional") {
+        if (size === "Short") {
+          generatedContent = `${contextIntro}Just wrapped up an analysis on ${topic}${angleSuffix}. The enterprise impact is undeniable. Have you adapted your strategy yet?\n\n#${topic.replace(/\s/g, '')} #ProfessionalGrowth`;
+        } else if (size === "Long") {
+          generatedContent = `${contextIntro}The landscape of ${topic}${angleSuffix} is undergoing a fundamental shift, and many organizations are caught entirely off guard.\n\nOver the past quarter, we've analyzed significant developments that redefine how enterprise professionals must approach this space. Strategic alignment is no longer optional—it's an absolute imperative. Organizations that fail to aggressively adapt their operational models will find themselves at a severe and compounding competitive disadvantage.\n\nWe are observing three macro-trends driving this transformation:\n\n1. Innovation Velocity: The speed at which new methodologies are entering the market is unprecedented.\n2. Regulatory & Compliance Frameworks: Safety remains a top priority, requiring dedicated cross-functional alignment.\n3. Lowering Barriers to Entry: New competitors are leveraging turnkey solutions to bypass traditional gatekeepers.\n\nTo navigate this, leadership teams must pivot from reactive troubleshooting to proactive architectural design.\n\nWhat are your key priorities regarding ${topic} this year? Let's discuss in the comments below.\n\n#${topic.replace(/\s/g, '')} #Leadership #Strategy #Enterprise #DigitalTransformation`;
+        } else {
+          generatedContent = `${contextIntro}The conversation around ${topic}${angleSuffix} is evolving faster than ever before. We are witnessing a clear paradigm shift in how leading organizations approach this challenge.\n\nAdapting to these changes is critical for long-term success and market positioning. Companies that integrate ${topic} deeply into their core workflows are seeing measurable gains in operational efficiency and employee engagement across the board.\n\nHowever, implementation remains the biggest hurdle. Without top-down alignment, even the best strategies falter.\n\nHow is your team handling the transition to ${topic}? Drop your thoughts below.\n\n#${topic.replace(/\s/g, '')} #BusinessStrategy #ProfessionalDevelopment #Growth`;
+        }
+      } else if (tone === "Casual") {
+        if (size === "Short") {
+          generatedContent = `${contextIntro}Been thinking a lot about ${topic}${angleSuffix} lately! 🤔 What's everyone's take on this?\n\n#${topic.replace(/\s/g, '')}`;
+        } else if (size === "Long") {
+          generatedContent = `${contextIntro}Okay, we really need to talk about ${topic}${angleSuffix}. 🚀\n\nIt's crazy how fast things are moving right now. Anyone else feeling like they constantly need to catch up? I've been experimenting with a few new approaches over the last month, trying to figure out what actually works.\n\nHonestly, the biggest realization I've had is that you cannot force it. You have to lean into the learning curve and find your own rhythm.\n\nInstead of trying to boil the ocean, focus on getting 1% better every single day. The compounding effect over four weeks is genuinely mind-blowing.\n\nLet me know your favorite resources below! What's working for you? 👇\n\n#${topic.replace(/\s/g, '')} #TechCommunity #Thoughts #Growth #LearningInPublic`;
+        } else {
+          generatedContent = `${contextIntro}Lately, I've been diving deep into ${topic}${angleSuffix} and it is completely changing my perspective. 🤯\n\nThere's so much noise out there right now, but when you strip it all away, the core fundamentals are incredibly powerful.\n\nWould love to hear how you all are navigating ${topic}! What's the biggest lesson you've learned so far? Drop your thoughts below 👇\n\n#${topic.replace(/\s/g, '')} #Community #Growth #Mindset`;
+        }
       } else {
-        generatedContent = `Lately, I've been diving deep into ${topic} and it is completely changing my perspective. 🤯\n\nThere's so much noise out there right now, but when you strip it all away, the core fundamentals are incredibly powerful. I'm starting to rethink how I structure my entire week around this concept.\n\nIt hasn't been entirely easy, though. There have been a lot of late nights and moments of frustration trying to wrap my head around the best practices. But the breakthrough moments make it completely worth it.\n\nWould love to hear how you all are navigating ${topic}! What's the biggest lesson you've learned so far? Drop your thoughts below 👇\n\n#${topic.replace(/\s/g, '')} #Community #Growth #Mindset`;
+        // Thought Leadership
+        if (size === "Short") {
+          generatedContent = `${contextIntro}The paradigm of ${topic}${angleSuffix} is shifting. The question isn't if you'll adapt, but when. 💡\n\n#${topic.replace(/\s/g, '')} #FutureOfWork`;
+        } else if (size === "Long") {
+          generatedContent = `${contextIntro}Most people completely misunderstand ${topic}${angleSuffix}.\n\nThey look at the surface-level metrics without taking the time to understand the underlying mechanics. True thought leadership in ${topic} requires a highly contrarian approach.\n\nHere is the reality check most aren't ready for:\n\n1. Ignore vanity metrics. Focus on actual value creation.\n2. Focus heavily on systemic leverage. Build systems that work for you while you sleep.\n3. Build for a 10-year horizon, not a 10-day sprint.\n\nStop playing it safe. Start actively questioning the defaults of your industry.\n\nAre you ready to build the future, or are you just renting space in it?\n\n#${topic.replace(/\s/g, '')} #Innovation #ThoughtLeadership #FutureOfWork #Strategy`;
+        } else {
+          generatedContent = `${contextIntro}We have reached a critical inflection point with ${topic}${angleSuffix}.\n\nWhile the majority of the market is distracted by immediate disruption, the true visionaries are looking closely at second-order effects. The legacy frameworks that got us here will not get us to where we need to go next.\n\nWho is leading this charge in your network? Tag someone below who is doing innovative work in this area.\n\n#${topic.replace(/\s/g, '')} #Leadership #Vision #Innovation`;
+        }
       }
-    } else {
-      // Thought Leadership
-      if (size === "Short") {
-        generatedContent = `The paradigm of ${topic} is shifting. The question isn't if you'll adapt, but when. 💡\n\n#${topic.replace(/\s/g, '')} #FutureOfWork`;
-      } else if (size === "Long") {
-        generatedContent = `Most people completely misunderstand ${topic}.\n\nThey look at the surface-level metrics without taking the time to understand the underlying mechanics. True thought leadership in ${topic} requires a highly contrarian approach. If you're simply following the crowd and reading the same blogs as everyone else, you're already two steps behind.\n\nHere is the reality check most aren't ready for:\n\n1. Ignore vanity metrics. They are designed to make you feel good, not to drive actual business value.\n2. Focus heavily on systemic leverage. Build systems that work for you while you sleep.\n3. Build for a 10-year horizon, not a 10-day sprint. Stop chasing short-term dopamine hits.\n\nWhen you shift your perspective from immediate gratification to long-term compounding, the decisions you make around ${topic} change drastically. You stop worrying about algorithms and start focusing on architecture.\n\nStop playing it safe. Start actively questioning the defaults of your industry. The next wave of industry leaders won't be made by conforming to the current standards—they will be made by rewriting the rules entirely.\n\nAre you ready to build the future, or are you just renting space in it?\n\n#${topic.replace(/\s/g, '')} #Innovation #ThoughtLeadership #FutureOfWork #Strategy`;
-      } else {
-        generatedContent = `We have reached a critical inflection point with ${topic}.\n\nWhile the majority of the market is distracted by the immediate disruption, the true visionaries are looking closely at the second-order effects. The legacy frameworks that got us here will absolutely not get us to where we need to go next.\n\nIt's time to fundamentally rebuild our mental models around ${topic}. We need to discard outdated assumptions and embrace a radically transparent approach to problem-solving in this space.\n\nWho is leading this charge in your network? Tag someone below who is doing innovative work in this area.\n\n#${topic.replace(/\s/g, '')} #Leadership #Vision #Innovation`;
-      }
+
+      const newPost = {
+        id: Date.now() + i,
+        topic,
+        size,
+        tone,
+        frequency,
+        content: generatedContent,
+        status: 'draft',
+        scheduledTime: null
+      };
+
+      await db.savePost(newPost);
+      createdPosts.push(newPost);
     }
 
-    const newPost = {
-      id: Date.now(),
-      topic,
-      size,
-      tone,
-      frequency,
-      content: generatedContent,
-      status: 'draft',
-      scheduledTime: null
-    };
-
-    await db.savePost(newPost);
-    return res.status(201).json(newPost);
+    return res.status(201).json(createdPosts.length === 1 ? createdPosts[0] : createdPosts);
   }
 
   try {
