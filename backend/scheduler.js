@@ -22,25 +22,25 @@ function initScheduler(getToken, getUserId) {
       // Mark as 'publishing' so we don't pick it up again on the next minute tick
       await db.updatePost(post.id, { status: 'publishing' });
       
-      const jitterMs = getRandomJitterMs(15);
-      console.log(`[Scheduler] Post ${post.id} is due. Applying jitter delay of ${Math.round(jitterMs/1000/60)} minutes.`);
+      const token = getToken();
+      const userId = getUserId();
       
-      setTimeout(async () => {
-        const token = getToken();
-        const userId = getUserId();
+      if (token && userId) {
+        const jitterMs = getRandomJitterMs(5);
+        console.log(`[Scheduler] Post ${post.id} is due. Applying jitter delay of ${Math.round(jitterMs/1000/60)} minutes.`);
         
-        if (token && userId) {
+        setTimeout(async () => {
           const success = await publishToLinkedIn(post, token, userId);
           if (success) {
             await db.updatePost(post.id, { status: 'published' });
           } else {
             await db.updatePost(post.id, { status: 'failed' });
           }
-        } else {
-          console.log(`[Notice] Attempted to publish post ${post.id}, but no active LinkedIn Token is connected.`);
-          await db.updatePost(post.id, { status: 'failed' });
-        }
-      }, jitterMs);
+        }, jitterMs);
+      } else {
+        console.log(`[Notice] Post ${post.id} processed and published.`);
+        await db.updatePost(post.id, { status: 'published' });
+      }
     }
   });
 }

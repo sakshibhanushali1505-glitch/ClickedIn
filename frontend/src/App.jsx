@@ -116,6 +116,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 
   useEffect(() => {
     fetchQueue();
+    // Poll queue every 30 seconds to automatically remove posted items
+    const interval = setInterval(fetchQueue, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -125,7 +128,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const fetchQueue = async () => {
     try {
       const res = await axios.get('/api/posts');
-      setQueue(res.data);
+      // Filter out posts that are already published or posted so they disappear from drafting and scheduling page
+      const activePosts = res.data.filter(p => p.status !== 'published' && p.status !== 'posted');
+      setQueue(activePosts);
     } catch (err) {
       console.error("Error fetching queue", err);
     }
@@ -241,7 +246,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
              </div>
           </div>
           <h3 className="text-white font-bold text-xl tracking-wide mb-2">Queue is Empty</h3>
-          <p className="text-slate-400 text-sm mb-4">Enter a topic above and click Generate to create posts.</p>
+          <p className="text-slate-400 text-sm mb-4">No active drafts or scheduled posts right now.</p>
         </div>
       ) : (
          <div className="space-y-6">
@@ -582,7 +587,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                     <div className="p-2 bg-purple-500/20 rounded-lg">
                       <FileText size={20} className="text-purple-400" />
                     </div>
-                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Your Content Queue & Scheduled Posts</h2>
+                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Active Drafts & Scheduled Posts</h2>
                   </div>
                   <div className="bg-white/10 border border-white/10 text-white text-xs font-bold px-4 py-1.5 rounded-full">
                     {queue.length} {queue.length === 1 ? 'Post' : 'Posts'}
