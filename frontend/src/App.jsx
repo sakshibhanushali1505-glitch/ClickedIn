@@ -356,7 +356,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         {/* Header */}
         <header className="relative z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4 group cursor-pointer" onClick={() => setActiveTab('generate')}>
-            <img src="/logo.png" alt="ClickedIn AI" className="h-14 w-auto object-contain drop-shadow-[0_0_25px_rgba(6,182,212,0.4)] transition-transform duration-300 group-hover:scale-105" />
+            <img src="/logo.png" alt="ClickedIn AI" className="h-16 w-auto object-contain drop-shadow-[0_0_25px_rgba(6,182,212,0.5)] transition-transform duration-300 group-hover:scale-105" />
           </div>
 
           <div className="flex items-center bg-white/[0.02] p-1.5 rounded-full border border-white/10 backdrop-blur-xl shadow-lg hover:bg-white/[0.04] transition-colors duration-300">
