@@ -99,6 +99,16 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
   }
 });
 
+app.get('/api/auth/demo', (req, res) => {
+  userAccessToken = "demo_access_token";
+  linkedInProfile = {
+    name: "Sakshi Bhanushali",
+    id: "sakshi_1505",
+    pictureUrl: linkedInProfile?.pictureUrl || ""
+  };
+  res.redirect(`/?success=linkedin_connected`);
+});
+
 app.get('/api/auth/status', (req, res) => {
   if (userAccessToken) {
     res.json({ connected: true, profile: linkedInProfile });
