@@ -76,14 +76,9 @@ const LoginPage = ({ onLogin }) => {
 
       <div className="glass-card w-full max-w-md p-10 relative z-10 animate-fade-in flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-white/[0.08]">
         
-        <div className="bg-gradient-to-br from-cyan-400 to-blue-600 p-5 rounded-3xl shadow-[0_0_40px_rgba(6,182,212,0.5)] mb-8">
-           <Zap size={48} className="text-white fill-white" />
-        </div>
+        <img src="/logo.png" alt="ClickedIn AI" className="w-56 h-auto mb-4 drop-shadow-[0_0_25px_rgba(6,182,212,0.4)]" />
         
-        <h1 className="text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 mb-3">
-          ClickedIn
-        </h1>
-        <p className="text-sm text-slate-400 mb-10 font-medium tracking-wide">Automate your professional growth. Safely.</p>
+        <p className="text-sm text-slate-400 mb-8 font-medium tracking-wide">Automate your professional growth. Safely.</p>
 
         <div className="w-full space-y-4">
           <button 
@@ -361,15 +356,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         {/* Header */}
         <header className="relative z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4 group cursor-pointer" onClick={() => setActiveTab('generate')}>
-            <div className="bg-gradient-to-br from-cyan-400 to-blue-600 p-3 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.4)] group-hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300">
-               <Zap size={28} className="text-white fill-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
-                ClickedIn
-              </h1>
-              <p className="text-cyan-400/80 text-xs font-bold tracking-[0.2em] uppercase mt-1">AI Automation Engine</p>
-            </div>
+            <img src="/logo.png" alt="ClickedIn AI" className="h-14 w-auto object-contain drop-shadow-[0_0_25px_rgba(6,182,212,0.4)] transition-transform duration-300 group-hover:scale-105" />
           </div>
 
           <div className="flex items-center bg-white/[0.02] p-1.5 rounded-full border border-white/10 backdrop-blur-xl shadow-lg hover:bg-white/[0.04] transition-colors duration-300">
