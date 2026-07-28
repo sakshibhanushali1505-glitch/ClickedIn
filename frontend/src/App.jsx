@@ -165,6 +165,8 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         setQueue(prev => [...prev, res.data]);
       }
       toast.success("Posts generated successfully!", { id: toastId });
+      // Switch seamlessly to Timing & Batch Schedule tab to view and schedule generated posts
+      setActiveTab('schedule');
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
@@ -429,12 +431,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             }`}
           >
             <Sparkles size={18} className={activeTab === 'generate' ? 'text-cyan-400' : ''} />
-            <span>Generate Content & Queue</span>
-            {queue.length > 0 && (
-              <span className="ml-2 bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                {queue.length}
-              </span>
-            )}
+            <span>Generate Content</span>
           </button>
 
           <button
@@ -447,6 +444,11 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
           >
             <Clock size={18} className={activeTab === 'schedule' ? 'text-purple-400' : ''} />
             <span>Timing & Batch Schedule</span>
+            {queue.length > 0 && (
+              <span className="ml-2 bg-purple-500/30 text-purple-300 border border-purple-500/50 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                {queue.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -464,146 +466,128 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 
         <div className="max-w-5xl mx-auto w-full space-y-8">
           
-          {/* TAB 1: GENERATE CONTENT + QUEUE */}
+          {/* TAB 1: GENERATE CONTENT */}
           {activeTab === 'generate' && (
-            <>
-              <div className="glass-card z-20 animate-fade-in">
-                <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-cyan-500/20 rounded-lg">
-                      <Sparkles size={20} className="text-cyan-400" />
-                    </div>
-                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Generate Content Queue</h2>
+            <div className="glass-card z-20 animate-fade-in">
+              <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-cyan-500/20 rounded-lg">
+                    <Sparkles size={20} className="text-cyan-400" />
                   </div>
-                  <div className="text-xs text-cyan-400 font-bold bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
-                    AI Generator Active
-                  </div>
+                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Generate Content Queue</h2>
                 </div>
+                <div className="text-xs text-cyan-400 font-bold bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
+                  AI Generator Active
+                </div>
+              </div>
+              
+              <div className="p-8 space-y-8">
                 
-                <div className="p-8 space-y-8">
-                  
-                  {/* Topic Input */}
+                {/* Topic Input */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Topic / Theme</label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Search className="text-slate-500 group-focus-within:text-cyan-400 transition-colors duration-300" size={20} />
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder="e.g., The Future of AI in SaaS..." 
+                      className="w-full pl-12 pr-4 py-4 glass-input text-[16px] text-white placeholder-slate-600 font-medium"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                    />
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
+                    <Sparkles size={12} className="text-amber-400" />
+                    <span><strong className="text-slate-300">Tip:</strong> You can add your experience under the <strong>Profile & Experience</strong> tab for personalized AI output!</span>
+                  </p>
+                </div>
+
+                {/* Grid for Size and Tone */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Post Size */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Topic / Theme</label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <Search className="text-slate-500 group-focus-within:text-cyan-400 transition-colors duration-300" size={20} />
-                      </div>
-                      <input 
-                        type="text" 
-                        placeholder="e.g., The Future of AI in SaaS..." 
-                        className="w-full pl-12 pr-4 py-4 glass-input text-[16px] text-white placeholder-slate-600 font-medium"
-                        value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                      />
-                    </div>
-                    <p className="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
-                      <Sparkles size={12} className="text-amber-400" />
-                      <span><strong className="text-slate-300">Tip:</strong> You can add your experience under the <strong>Profile & Experience</strong> tab for personalized AI output!</span>
-                    </p>
-                  </div>
-
-                  {/* Grid for Size and Tone */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Post Size */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Post Size</label>
-                      <div className="flex space-x-3">
-                        {[
-                          { id: 'Short', icon: Zap },
-                          { id: 'Medium', icon: BookOpen },
-                          { id: 'Long', icon: AlignLeft }
-                        ].map(item => (
-                          <button 
-                            key={item.id}
-                            onClick={() => setSize(item.id)}
-                            className={`flex-1 glass-btn ${size === item.id ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                          >
-                            <item.icon size={16} className={size === item.id ? "text-cyan-400" : "text-slate-500"} />
-                            <span>{item.id}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Tone */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Tone</label>
-                      <div className="flex space-x-3 overflow-x-auto pb-1 scrollbar-hide">
-                        {[
-                          { id: 'Professional', icon: Briefcase },
-                          { id: 'Casual', icon: Wind },
-                          { id: 'Thought Leadership', icon: Star }
-                        ].map(item => (
-                          <button 
-                            key={item.id}
-                            onClick={() => setTone(item.id)}
-                            className={`px-5 glass-btn whitespace-nowrap ${tone === item.id ? 'bg-purple-500/20 border-purple-500/50 text-white shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                          >
-                            <item.icon size={16} className={tone === item.id ? "text-purple-400" : "text-slate-500"} />
-                            <span>{item.id}</span>
-                          </button>
-                        ))}
-                      </div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Post Size</label>
+                    <div className="flex space-x-3">
+                      {[
+                        { id: 'Short', icon: Zap },
+                        { id: 'Medium', icon: BookOpen },
+                        { id: 'Long', icon: AlignLeft }
+                      ].map(item => (
+                        <button 
+                          key={item.id}
+                          onClick={() => setSize(item.id)}
+                          className={`flex-1 glass-btn ${size === item.id ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                        >
+                          <item.icon size={16} className={size === item.id ? "text-cyan-400" : "text-slate-500"} />
+                          <span>{item.id}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Scheduling Config */}
-                  <div className="pt-6 border-t border-white/5 space-y-6">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Number of Posts</label>
-                      <div className="flex space-x-3">
-                        {[1, 2, 3].map(num => (
-                          <button 
-                            key={num}
-                            onClick={() => setPostCount(num)}
-                            className={`flex-1 glass-btn ${postCount === num ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                          >
-                            <span>{num} {num === 1 ? 'Post' : 'Posts'}</span>
-                          </button>
-                        ))}
-                      </div>
+                  {/* Tone */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Tone</label>
+                    <div className="flex space-x-3 overflow-x-auto pb-1 scrollbar-hide">
+                      {[
+                        { id: 'Professional', icon: Briefcase },
+                        { id: 'Casual', icon: Wind },
+                        { id: 'Thought Leadership', icon: Star }
+                      ].map(item => (
+                        <button 
+                          key={item.id}
+                          onClick={() => setTone(item.id)}
+                          className={`px-5 glass-btn whitespace-nowrap ${tone === item.id ? 'bg-purple-500/20 border-purple-500/50 text-white shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                        >
+                          <item.icon size={16} className={tone === item.id ? "text-purple-400" : "text-slate-500"} />
+                          <span>{item.id}</span>
+                        </button>
+                      ))}
                     </div>
-                  </div>
-
-                  <button 
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !topic}
-                    className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 hover:from-cyan-400 hover:via-blue-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase relative overflow-hidden group"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none skew-x-12"></div>
-                    {isGenerating ? (
-                      <span className="animate-pulse flex items-center space-x-2 relative z-10">
-                        <Sparkles size={20} className="animate-spin" />
-                        <span>Synthesizing Draft...</span>
-                      </span>
-                    ) : (
-                      <div className="flex items-center space-x-2 relative z-10">
-                        <Sparkles size={20} />
-                        <span>Generate Content Queue</span>
-                      </div>
-                    )}
-                  </button>
-                  
-                </div>
-              </div>
-
-              {/* Staging Area Posts directly on Main View */}
-              <div className="glass-card min-h-[300px] flex flex-col animate-fade-in">
-                <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-purple-500/20 rounded-lg">
-                      <FileText size={20} className="text-purple-400" />
-                    </div>
-                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Active Drafts & Scheduled Posts</h2>
-                  </div>
-                  <div className="bg-white/10 border border-white/10 text-white text-xs font-bold px-4 py-1.5 rounded-full">
-                    {queue.length} {queue.length === 1 ? 'Post' : 'Posts'}
                   </div>
                 </div>
-                {renderPostsQueueList()}
+
+                {/* Scheduling Config */}
+                <div className="pt-6 border-t border-white/5 space-y-6">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Number of Posts</label>
+                    <div className="flex space-x-3">
+                      {[1, 2, 3].map(num => (
+                        <button 
+                          key={num}
+                          onClick={() => setPostCount(num)}
+                          className={`flex-1 glass-btn ${postCount === num ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                        >
+                          <span>{num} {num === 1 ? 'Post' : 'Posts'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleGenerate}
+                  disabled={isGenerating || !topic}
+                  className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 hover:from-cyan-400 hover:via-blue-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase relative overflow-hidden group"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none skew-x-12"></div>
+                  {isGenerating ? (
+                    <span className="animate-pulse flex items-center space-x-2 relative z-10">
+                      <Sparkles size={20} className="animate-spin" />
+                      <span>Synthesizing Draft...</span>
+                    </span>
+                  ) : (
+                    <div className="flex items-center space-x-2 relative z-10">
+                      <Sparkles size={20} />
+                      <span>Generate Content Queue</span>
+                    </div>
+                  )}
+                </button>
+                
               </div>
-            </>
+            </div>
           )}
 
           {/* TAB 2: TIMING SLOT & SCHEDULE */}
