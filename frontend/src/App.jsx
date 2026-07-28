@@ -159,8 +159,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       } else {
         setQueue(prev => [...prev, res.data]);
       }
-      toast.success("Posts generated! Redirecting to Timing & Schedule tab...", { id: toastId });
-      setActiveTab('schedule');
+      toast.success("Posts generated successfully!", { id: toastId });
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
@@ -229,6 +228,108 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   };
 
   const draftCount = queue.filter(p => p.status === 'draft').length;
+
+  const renderPostsQueueList = () => (
+    <div className="p-8 flex-1 flex flex-col">
+      {queue.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
+          <div className="relative w-28 h-28 mb-6">
+             <div className="absolute inset-0 border-2 border-dashed border-slate-700 rounded-full animate-[spin_10s_linear_infinite]"></div>
+             <div className="absolute inset-2 border-2 border-dashed border-cyan-500/30 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+             <div className="absolute inset-0 flex items-center justify-center">
+               <FileText size={36} className="text-cyan-400 opacity-60" />
+             </div>
+          </div>
+          <h3 className="text-white font-bold text-xl tracking-wide mb-2">Queue is Empty</h3>
+          <p className="text-slate-400 text-sm mb-4">Enter a topic above and click Generate to create posts.</p>
+        </div>
+      ) : (
+         <div className="space-y-6">
+            {queue.map(post => (
+              <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
+                  <div className="flex items-center space-x-3">
+                    <span className="text-[10px] font-bold text-white bg-white/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-white/10">
+                      {post.topic}
+                    </span>
+                    <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-cyan-500/20">
+                      {post.tone}
+                    </span>
+                    <span className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-purple-500/20">
+                      {post.size}
+                    </span>
+                  </div>
+                  
+                  {post.status === 'draft' ? (
+                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-amber-500/20 flex items-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-2 animate-pulse"></span>
+                      Pending Review
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full flex items-center uppercase tracking-widest border border-emerald-500/20">
+                      <Clock size={12} className="mr-2" />
+                      Scheduled: {new Date(post.scheduledTime).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                
+                <textarea 
+                  className="w-full h-36 bg-black/20 border border-white/5 rounded-xl p-4 text-[15px] focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/10 mb-4 resize-none text-slate-300 font-medium leading-relaxed transition-all"
+                  defaultValue={post.content}
+                  id={`content-${post.id}`}
+                  spellCheck="false"
+                />
+                
+                <div className="flex justify-end items-center space-x-4">
+                  {post.status === 'draft' && (
+                    <>
+                      <input 
+                        type="datetime-local" 
+                        id={`time-${post.id}`} 
+                        defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                        style={{ colorScheme: 'dark' }}
+                        className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
+                      />
+                      <button 
+                        onClick={() => discardDraft(post.id)}
+                        className="flex items-center space-x-1.5 text-sm font-semibold text-slate-400 hover:text-red-400 transition-colors px-2 py-2 rounded-lg hover:bg-red-500/10"
+                      >
+                        <Trash2 size={16} />
+                        <span>Discard</span>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const inputEl = document.getElementById(`time-${post.id}`);
+                          const timeVal = inputEl ? inputEl.value : null;
+                          
+                          if (!timeVal) {
+                            toast.error("Please select a date and time before scheduling!");
+                            return;
+                          }
+                          handleApprove(post.id, document.getElementById(`content-${post.id}`).value, timeVal);
+                        }}
+                        className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg hover:shadow-white/10 border border-white/10"
+                      >
+                        <Send size={16} className="text-cyan-400" />
+                        <span>Approve & Schedule</span>
+                      </button>
+                    </>
+                  )}
+                  {post.status === 'approved' && (
+                    <button 
+                      onClick={() => cancelSchedule(post.id)}
+                      className="flex items-center space-x-1.5 text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors px-4 py-2 rounded-lg hover:bg-amber-500/10 border border-amber-500/20"
+                    >
+                      <span>Cancel Schedule</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen p-4 md:p-8 lg:p-12 flex justify-center overflow-x-hidden relative">
@@ -315,7 +416,12 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             }`}
           >
             <Sparkles size={18} className={activeTab === 'generate' ? 'text-cyan-400' : ''} />
-            <span>Generate Tab</span>
+            <span>Generate Content & Queue</span>
+            {queue.length > 0 && (
+              <span className="ml-2 bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                {queue.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -327,12 +433,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             }`}
           >
             <Clock size={18} className={activeTab === 'schedule' ? 'text-purple-400' : ''} />
-            <span>Timing & Schedule</span>
-            {queue.length > 0 && (
-              <span className="ml-2 bg-purple-500/30 text-purple-300 border border-purple-500/50 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                {queue.length}
-              </span>
-            )}
+            <span>Timing & Batch Schedule</span>
           </button>
 
           <button
@@ -348,130 +449,148 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
           </button>
         </div>
 
-        <div className="max-w-5xl mx-auto w-full">
+        <div className="max-w-5xl mx-auto w-full space-y-8">
           
-          {/* TAB 1: GENERATE CONTENT */}
+          {/* TAB 1: GENERATE CONTENT + QUEUE */}
           {activeTab === 'generate' && (
-            <div className="glass-card z-20 animate-fade-in">
-              <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-cyan-500/20 rounded-lg">
-                    <Sparkles size={20} className="text-cyan-400" />
+            <>
+              <div className="glass-card z-20 animate-fade-in">
+                <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-cyan-500/20 rounded-lg">
+                      <Sparkles size={20} className="text-cyan-400" />
+                    </div>
+                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Generate Content Queue</h2>
                   </div>
-                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Generate Content Queue</h2>
+                  <div className="text-xs text-cyan-400 font-bold bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
+                    AI Generator Active
+                  </div>
                 </div>
-                <div className="text-xs text-cyan-400 font-bold bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
-                  AI Generator Active
+                
+                <div className="p-8 space-y-8">
+                  
+                  {/* Topic Input */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Topic / Theme</label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <Search className="text-slate-500 group-focus-within:text-cyan-400 transition-colors duration-300" size={20} />
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder="e.g., The Future of AI in SaaS..." 
+                        className="w-full pl-12 pr-4 py-4 glass-input text-[16px] text-white placeholder-slate-600 font-medium"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
+                      <Sparkles size={12} className="text-amber-400" />
+                      <span><strong className="text-slate-300">Tip:</strong> You can add your experience under the <strong>Profile & Experience</strong> tab for personalized AI output!</span>
+                    </p>
+                  </div>
+
+                  {/* Grid for Size and Tone */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Post Size */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Post Size</label>
+                      <div className="flex space-x-3">
+                        {[
+                          { id: 'Short', icon: Zap },
+                          { id: 'Medium', icon: BookOpen },
+                          { id: 'Long', icon: AlignLeft }
+                        ].map(item => (
+                          <button 
+                            key={item.id}
+                            onClick={() => setSize(item.id)}
+                            className={`flex-1 glass-btn ${size === item.id ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                          >
+                            <item.icon size={16} className={size === item.id ? "text-cyan-400" : "text-slate-500"} />
+                            <span>{item.id}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tone */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Tone</label>
+                      <div className="flex space-x-3 overflow-x-auto pb-1 scrollbar-hide">
+                        {[
+                          { id: 'Professional', icon: Briefcase },
+                          { id: 'Casual', icon: Wind },
+                          { id: 'Thought Leadership', icon: Star }
+                        ].map(item => (
+                          <button 
+                            key={item.id}
+                            onClick={() => setTone(item.id)}
+                            className={`px-5 glass-btn whitespace-nowrap ${tone === item.id ? 'bg-purple-500/20 border-purple-500/50 text-white shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                          >
+                            <item.icon size={16} className={tone === item.id ? "text-purple-400" : "text-slate-500"} />
+                            <span>{item.id}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Scheduling Config */}
+                  <div className="pt-6 border-t border-white/5 space-y-6">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Number of Posts</label>
+                      <div className="flex space-x-3">
+                        {[1, 2, 3].map(num => (
+                          <button 
+                            key={num}
+                            onClick={() => setPostCount(num)}
+                            className={`flex-1 glass-btn ${postCount === num ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
+                          >
+                            <span>{num} {num === 1 ? 'Post' : 'Posts'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !topic}
+                    className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 hover:from-cyan-400 hover:via-blue-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase relative overflow-hidden group"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none skew-x-12"></div>
+                    {isGenerating ? (
+                      <span className="animate-pulse flex items-center space-x-2 relative z-10">
+                        <Sparkles size={20} className="animate-spin" />
+                        <span>Synthesizing Draft...</span>
+                      </span>
+                    ) : (
+                      <div className="flex items-center space-x-2 relative z-10">
+                        <Sparkles size={20} />
+                        <span>Generate Content Queue</span>
+                      </div>
+                    )}
+                  </button>
+                  
                 </div>
               </div>
-              
-              <div className="p-8 space-y-8">
-                
-                {/* Topic Input */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Topic / Theme</label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <Search className="text-slate-500 group-focus-within:text-cyan-400 transition-colors duration-300" size={20} />
-                    </div>
-                    <input 
-                      type="text" 
-                      placeholder="e.g., The Future of AI in SaaS..." 
-                      className="w-full pl-12 pr-4 py-4 glass-input text-[16px] text-white placeholder-slate-600 font-medium"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                    />
-                  </div>
-                  <p className="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
-                    <Sparkles size={12} className="text-amber-400" />
-                    <span><strong className="text-slate-300">Tip:</strong> You can add your experience under the <strong>Profile & Experience</strong> tab for personalized AI output!</span>
-                  </p>
-                </div>
 
-                {/* Grid for Size and Tone */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Post Size */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Post Size</label>
-                    <div className="flex space-x-3">
-                      {[
-                        { id: 'Short', icon: Zap },
-                        { id: 'Medium', icon: BookOpen },
-                        { id: 'Long', icon: AlignLeft }
-                      ].map(item => (
-                        <button 
-                          key={item.id}
-                          onClick={() => setSize(item.id)}
-                          className={`flex-1 glass-btn ${size === item.id ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                        >
-                          <item.icon size={16} className={size === item.id ? "text-cyan-400" : "text-slate-500"} />
-                          <span>{item.id}</span>
-                        </button>
-                      ))}
+              {/* Staging Area Posts directly on Main View */}
+              <div className="glass-card min-h-[300px] flex flex-col animate-fade-in">
+                <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-purple-500/20 rounded-lg">
+                      <FileText size={20} className="text-purple-400" />
                     </div>
+                    <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Your Content Queue & Scheduled Posts</h2>
                   </div>
-
-                  {/* Tone */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Tone</label>
-                    <div className="flex space-x-3 overflow-x-auto pb-1 scrollbar-hide">
-                      {[
-                        { id: 'Professional', icon: Briefcase },
-                        { id: 'Casual', icon: Wind },
-                        { id: 'Thought Leadership', icon: Star }
-                      ].map(item => (
-                        <button 
-                          key={item.id}
-                          onClick={() => setTone(item.id)}
-                          className={`px-5 glass-btn whitespace-nowrap ${tone === item.id ? 'bg-purple-500/20 border-purple-500/50 text-white shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                        >
-                          <item.icon size={16} className={tone === item.id ? "text-purple-400" : "text-slate-500"} />
-                          <span>{item.id}</span>
-                        </button>
-                      ))}
-                    </div>
+                  <div className="bg-white/10 border border-white/10 text-white text-xs font-bold px-4 py-1.5 rounded-full">
+                    {queue.length} {queue.length === 1 ? 'Post' : 'Posts'}
                   </div>
                 </div>
-
-                {/* Scheduling Config */}
-                <div className="pt-6 border-t border-white/5 space-y-6">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Number of Posts</label>
-                    <div className="flex space-x-3">
-                      {[1, 2, 3].map(num => (
-                        <button 
-                          key={num}
-                          onClick={() => setPostCount(num)}
-                          className={`flex-1 glass-btn ${postCount === num ? 'bg-cyan-500/20 border-cyan-500/50 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-white'}`}
-                        >
-                          <span>{num} {num === 1 ? 'Post' : 'Posts'}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={handleGenerate}
-                  disabled={isGenerating || !topic}
-                  className="w-full mt-4 flex items-center justify-center space-x-3 bg-gradient-to-r from-cyan-500 via-blue-500 to-blue-600 hover:from-cyan-400 hover:via-blue-400 hover:to-blue-500 text-white py-4 rounded-2xl font-bold tracking-widest shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_rgba(6,182,212,0.6)] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none disabled:transform-none uppercase relative overflow-hidden group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none skew-x-12"></div>
-                  {isGenerating ? (
-                    <span className="animate-pulse flex items-center space-x-2 relative z-10">
-                      <Sparkles size={20} className="animate-spin" />
-                      <span>Synthesizing Draft...</span>
-                    </span>
-                  ) : (
-                    <div className="flex items-center space-x-2 relative z-10">
-                      <Sparkles size={20} />
-                      <span>Generate Content Queue</span>
-                    </div>
-                  )}
-                </button>
-                
+                {renderPostsQueueList()}
               </div>
-            </div>
+            </>
           )}
 
           {/* TAB 2: TIMING SLOT & SCHEDULE */}
@@ -544,113 +663,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 </div>
               </div>
 
-              {/* Staging Area Posts List */}
-              <div className="p-8 flex-1 flex flex-col">
-                {queue.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-16">
-                    <div className="relative w-28 h-28 mb-6">
-                       <div className="absolute inset-0 border-2 border-dashed border-slate-700 rounded-full animate-[spin_10s_linear_infinite]"></div>
-                       <div className="absolute inset-2 border-2 border-dashed border-purple-500/30 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
-                       <div className="absolute inset-0 flex items-center justify-center">
-                         <Clock size={36} className="text-purple-400 opacity-60" />
-                       </div>
-                    </div>
-                    <h3 className="text-white font-bold text-xl tracking-wide mb-2">No Scheduled Posts or Drafts</h3>
-                    <p className="text-slate-400 text-sm mb-6">Switch to the Generate tab to create new content drafts.</p>
-                    <button 
-                      onClick={() => setActiveTab('generate')}
-                      className="flex items-center space-x-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
-                    >
-                      <Sparkles size={16} />
-                      <span>Go to Generate Tab</span>
-                    </button>
-                  </div>
-                ) : (
-                   <div className="space-y-6">
-                      {queue.map(post => (
-                        <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
-                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-[10px] font-bold text-white bg-white/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-white/10">
-                                {post.topic}
-                              </span>
-                              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-cyan-500/20">
-                                {post.tone}
-                              </span>
-                              <span className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-purple-500/20">
-                                {post.size}
-                              </span>
-                            </div>
-                            
-                            {post.status === 'draft' ? (
-                              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-amber-500/20 flex items-center">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-2 animate-pulse"></span>
-                                Pending Review
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full flex items-center uppercase tracking-widest border border-emerald-500/20">
-                                <Clock size={12} className="mr-2" />
-                                Scheduled: {new Date(post.scheduledTime).toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                          
-                          <textarea 
-                            className="w-full h-36 bg-black/20 border border-white/5 rounded-xl p-4 text-[15px] focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/10 mb-4 resize-none text-slate-300 font-medium leading-relaxed transition-all"
-                            defaultValue={post.content}
-                            id={`content-${post.id}`}
-                            spellCheck="false"
-                          />
-                          
-                          <div className="flex justify-end items-center space-x-4">
-                            {post.status === 'draft' && (
-                              <>
-                                <input 
-                                  type="datetime-local" 
-                                  id={`time-${post.id}`} 
-                                  defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
-                                  style={{ colorScheme: 'dark' }}
-                                  className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
-                                />
-                                <button 
-                                  onClick={() => discardDraft(post.id)}
-                                  className="flex items-center space-x-1.5 text-sm font-semibold text-slate-400 hover:text-red-400 transition-colors px-2 py-2 rounded-lg hover:bg-red-500/10"
-                                >
-                                  <Trash2 size={16} />
-                                  <span>Discard</span>
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    const inputEl = document.getElementById(`time-${post.id}`);
-                                    const timeVal = inputEl ? inputEl.value : null;
-                                    
-                                    if (!timeVal) {
-                                      toast.error("Please select a date and time before scheduling!");
-                                      return;
-                                    }
-                                    handleApprove(post.id, document.getElementById(`content-${post.id}`).value, timeVal);
-                                  }}
-                                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg hover:shadow-white/10 border border-white/10"
-                                >
-                                  <Send size={16} className="text-cyan-400" />
-                                  <span>Approve & Schedule</span>
-                                </button>
-                              </>
-                            )}
-                            {post.status === 'approved' && (
-                              <button 
-                                onClick={() => cancelSchedule(post.id)}
-                                className="flex items-center space-x-1.5 text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors px-4 py-2 rounded-lg hover:bg-amber-500/10 border border-amber-500/20"
-                              >
-                                <span>Cancel Schedule</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                )}
-              </div>
+              {renderPostsQueueList()}
             </div>
           )}
 
