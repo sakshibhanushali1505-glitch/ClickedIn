@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers } from 'lucide-react';
+import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers, Save, CheckCircle } from 'lucide-react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -93,7 +93,6 @@ const LoginPage = ({ onLogin }) => {
             <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
             <span>Continue with LinkedIn</span>
           </button>
-
         </div>
       </div>
     </div>
@@ -101,8 +100,8 @@ const LoginPage = ({ onLogin }) => {
 };
 
 const ClickedInDashboard = ({ userProfile, onLogout }) => {
+  const [activeTab, setActiveTab] = useState('generate'); // 'generate', 'schedule', 'profile'
   const [showSettings, setShowSettings] = useState(false);
-  const [showExperienceModal, setShowExperienceModal] = useState(false);
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState(localStorage.getItem('userWorkHistory') || '');
   const [size, setSize] = useState('Medium');
@@ -132,6 +131,11 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     }
   };
 
+  const handleSaveProfile = () => {
+    localStorage.setItem('userWorkHistory', context);
+    toast.success("Profile experience & settings saved successfully!");
+  };
+
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
     if (!topic) {
@@ -155,7 +159,8 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       } else {
         setQueue(prev => [...prev, res.data]);
       }
-      toast.success("Posts generated successfully!", { id: toastId });
+      toast.success("Posts generated! Redirecting to Timing & Schedule tab...", { id: toastId });
+      setActiveTab('schedule');
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
@@ -223,39 +228,11 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     }
   };
 
+  const draftCount = queue.filter(p => p.status === 'draft').length;
+
   return (
     <div className="min-h-screen p-4 md:p-8 lg:p-12 flex justify-center overflow-x-hidden relative">
       
-      {showExperienceModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-[#0F1115] border border-white/10 w-full max-w-xl rounded-3xl p-8 shadow-2xl relative animate-fade-in">
-            <h2 className="text-xl font-bold text-white mb-6">Account Settings</h2>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Global AI Context (Work History)</label>
-                <p className="text-xs text-slate-300 mb-3">LinkedIn's API prevents third-party apps from automatically reading your work history. Paste it here once, and the AI will permanently remember it in the background.</p>
-                <textarea 
-                  placeholder="Paste your resume summary, bio, or work history here..." 
-                  className="w-full p-4 bg-white/[0.02] border border-white/5 rounded-xl text-[14px] text-white placeholder-slate-400 focus:border-cyan-500/50 min-h-[150px] resize-y"
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center justify-end pt-6 border-t border-white/5">
-                <button 
-                  onClick={() => setShowExperienceModal(false)}
-                  className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-bold transition-colors"
-                >
-                  Save & Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Background glow effects */}
       <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-600/20 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none"></div>
@@ -263,8 +240,8 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       <div className="max-w-[1200px] w-full relative z-10 animate-fade-in">
         
         {/* Header */}
-        <header className="relative z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 space-y-4 sm:space-y-0">
-          <div className="flex items-center space-x-4 group cursor-pointer">
+        <header className="relative z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 space-y-4 sm:space-y-0">
+          <div className="flex items-center space-x-4 group cursor-pointer" onClick={() => setActiveTab('generate')}>
             <div className="bg-gradient-to-br from-cyan-400 to-blue-600 p-3 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.4)] group-hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300">
                <Zap size={28} className="text-white fill-white" />
             </div>
@@ -277,7 +254,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
           </div>
 
           <div className="flex items-center bg-white/[0.02] p-1.5 rounded-full border border-white/10 backdrop-blur-xl shadow-lg hover:bg-white/[0.04] transition-colors duration-300">
-             <div className="flex items-center pl-4 pr-3 py-1 border-r border-white/10">
+             <div className="flex items-center pl-4 pr-3 py-1 border-r border-white/10 cursor-pointer" onClick={() => setActiveTab('profile')}>
                <div className="relative flex h-2 w-2 mr-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
@@ -307,12 +284,12 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                     <button 
                       onClick={() => {
                         setShowSettings(false);
-                        setShowExperienceModal(true);
+                        setActiveTab('profile');
                       }}
                       className="w-full text-left px-5 py-4 text-[14px] text-white hover:bg-white/5 font-bold transition-colors border-b border-white/5 flex items-center space-x-3"
                     >
                        <User size={16} className="text-cyan-400" />
-                       <span>Add Relevant Experience</span>
+                       <span>Profile & Work Experience</span>
                     </button>
                     <button 
                       onClick={onLogout} 
@@ -327,18 +304,65 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
           </div>
         </header>
 
+        {/* Navigation Tabs */}
+        <div className="flex items-center space-x-3 mb-8 bg-white/[0.02] p-2 rounded-2xl border border-white/[0.08] backdrop-blur-xl max-w-5xl mx-auto">
+          <button
+            onClick={() => setActiveTab('generate')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3.5 px-5 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'generate'
+                ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Sparkles size={18} className={activeTab === 'generate' ? 'text-cyan-400' : ''} />
+            <span>Generate Tab</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('schedule')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3.5 px-5 rounded-xl font-bold text-sm transition-all duration-300 relative ${
+              activeTab === 'schedule'
+                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.2)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Clock size={18} className={activeTab === 'schedule' ? 'text-purple-400' : ''} />
+            <span>Timing & Schedule</span>
+            {queue.length > 0 && (
+              <span className="ml-2 bg-purple-500/30 text-purple-300 border border-purple-500/50 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                {queue.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3.5 px-5 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'profile'
+                ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <User size={18} className={activeTab === 'profile' ? 'text-emerald-400' : ''} />
+            <span>Profile & Experience</span>
+          </button>
+        </div>
+
         <div className="max-w-5xl mx-auto w-full">
           
-          {/* Main Column */}
-          <div className="flex flex-col space-y-8">
-            
-            {/* Post Assistant Card */}
-            <div className="glass-card z-20">
-              <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center space-x-3 rounded-t-3xl">
-                <div className="p-2 bg-cyan-500/20 rounded-lg">
-                  <Sparkles size={20} className="text-cyan-400" />
+          {/* TAB 1: GENERATE CONTENT */}
+          {activeTab === 'generate' && (
+            <div className="glass-card z-20 animate-fade-in">
+              <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-cyan-500/20 rounded-lg">
+                    <Sparkles size={20} className="text-cyan-400" />
+                  </div>
+                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Generate Content Queue</h2>
                 </div>
-                <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Post Assistant</h2>
+                <div className="text-xs text-cyan-400 font-bold bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
+                  AI Generator Active
+                </div>
               </div>
               
               <div className="p-8 space-y-8">
@@ -360,11 +384,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                   </div>
                   <p className="mt-3 text-xs text-slate-400 flex items-center space-x-1.5">
                     <Sparkles size={12} className="text-amber-400" />
-                    <span><strong className="text-slate-300">Pro Tip:</strong> Click the Settings (⚙️) icon above to add your prior experience. It helps the AI write significantly better, personalized posts!</span>
+                    <span><strong className="text-slate-300">Tip:</strong> You can add your experience under the <strong>Profile & Experience</strong> tab for personalized AI output!</span>
                   </p>
                 </div>
-
-
 
                 {/* Grid for Size and Tone */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -427,8 +449,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       ))}
                     </div>
                   </div>
-                  
-
                 </div>
 
                 <button 
@@ -452,30 +472,32 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 
               </div>
             </div>
+          )}
 
-            {/* Draft Queue Card */}
-            <div className="glass-card min-h-[400px] flex flex-col">
+          {/* TAB 2: TIMING SLOT & SCHEDULE */}
+          {activeTab === 'schedule' && (
+            <div className="glass-card min-h-[500px] flex flex-col animate-fade-in">
               <div className="bg-white/[0.03] border-b border-white/[0.05] px-8 py-5 flex items-center justify-between rounded-t-3xl">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-purple-500/20 rounded-lg">
-                    <FileText size={20} className="text-purple-400" />
+                    <Clock size={20} className="text-purple-400" />
                   </div>
-                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Staging Area</h2>
+                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Timing Slots & Batch Scheduler</h2>
                 </div>
                 <div className="bg-white/10 border border-white/10 text-white text-xs font-bold px-4 py-1.5 rounded-full">
-                  {queue.length} {queue.length === 1 ? 'Draft' : 'Drafts'}
+                  {queue.length} {queue.length === 1 ? 'Post' : 'Posts'} Total
                 </div>
               </div>
               
-              {/* Batch Schedule Settings - Permanently Visible */}
-              <div className="px-8 pt-6 pb-2 border-b border-white/[0.05]">
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-5 flex flex-col xl:flex-row items-center justify-between shadow-lg">
+              {/* Batch Schedule Settings Box */}
+              <div className="px-8 pt-6 pb-4 border-b border-white/[0.05]">
+                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6 flex flex-col xl:flex-row items-center justify-between shadow-lg">
                   <div className="mb-4 xl:mb-0 xl:mr-6 flex-1">
-                    <h3 className="text-white font-bold text-[14px] tracking-wide mb-1 flex items-center">
-                      <Layers size={16} className="mr-2 text-cyan-400" /> 
-                      Batch Scheduling Rules
+                    <h3 className="text-white font-bold text-[15px] tracking-wide mb-1 flex items-center">
+                      <Layers size={18} className="mr-2 text-purple-400" /> 
+                      Batch Timing Slots
                     </h3>
-                    <p className="text-slate-400 text-[12px]">Set your master start time and gap. This will apply when you click Approve All.</p>
+                    <p className="text-slate-400 text-[13px]">Define your master start time and gap duration. Applying "Approve All" will schedule all pending drafts across your timing slots.</p>
                   </div>
                   
                   <div className="flex flex-col sm:flex-row items-end space-y-4 sm:space-y-0 sm:space-x-4">
@@ -491,7 +513,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                     
                     <div className="flex space-x-2">
                       <div>
-                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours</label>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours Gap</label>
                         <input 
                           type="number" min="0" max="72"
                           className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
@@ -500,7 +522,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins</label>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins Gap</label>
                         <input 
                           type="number" min="0" max="59"
                           className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
@@ -512,28 +534,36 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 
                     <button 
                       onClick={handleApproveAll}
-                      disabled={queue.filter(p => p.status === 'draft').length === 0}
-                      className="w-full sm:w-auto h-[44px] flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-sm font-bold px-6 rounded-xl transition-all shadow-[0_4px_15px_rgba(6,182,212,0.3)] hover:shadow-[0_6px_20px_rgba(6,182,212,0.5)] border border-cyan-400/20 disabled:opacity-50 disabled:pointer-events-none"
+                      disabled={draftCount === 0}
+                      className="w-full sm:w-auto h-[44px] flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white text-sm font-bold px-6 rounded-xl transition-all shadow-[0_4px_15px_rgba(168,85,247,0.3)] hover:shadow-[0_6px_20px_rgba(168,85,247,0.5)] border border-purple-400/20 disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <Send size={16} />
-                      <span>Approve All</span>
+                      <span>Approve All Drafts ({draftCount})</span>
                     </button>
                   </div>
                 </div>
               </div>
 
+              {/* Staging Area Posts List */}
               <div className="p-8 flex-1 flex flex-col">
                 {queue.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
-                    <div className="relative w-32 h-32 mb-8">
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-16">
+                    <div className="relative w-28 h-28 mb-6">
                        <div className="absolute inset-0 border-2 border-dashed border-slate-700 rounded-full animate-[spin_10s_linear_infinite]"></div>
-                       <div className="absolute inset-2 border-2 border-dashed border-slate-600 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+                       <div className="absolute inset-2 border-2 border-dashed border-purple-500/30 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
                        <div className="absolute inset-0 flex items-center justify-center">
-                         <FileText size={40} className="text-slate-600 opacity-50" />
+                         <Clock size={36} className="text-purple-400 opacity-60" />
                        </div>
                     </div>
-                    <h3 className="text-white font-bold text-xl tracking-wide mb-2">Queue is Empty</h3>
-                    <p className="text-slate-400 text-sm">Generate a draft above to populate the staging area.</p>
+                    <h3 className="text-white font-bold text-xl tracking-wide mb-2">No Scheduled Posts or Drafts</h3>
+                    <p className="text-slate-400 text-sm mb-6">Switch to the Generate tab to create new content drafts.</p>
+                    <button 
+                      onClick={() => setActiveTab('generate')}
+                      className="flex items-center space-x-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
+                    >
+                      <Sparkles size={16} />
+                      <span>Go to Generate Tab</span>
+                    </button>
                   </div>
                 ) : (
                    <div className="space-y-6">
@@ -622,9 +652,81 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 )}
               </div>
             </div>
+          )}
 
-          
-        </div>
+          {/* TAB 3: PROFILE & EXPERIENCE */}
+          {activeTab === 'profile' && (
+            <div className="glass-card z-20 animate-fade-in p-8 space-y-8">
+              <div className="bg-white/[0.03] border-b border-white/[0.05] -mx-8 -mt-8 px-8 py-5 flex items-center justify-between rounded-t-3xl mb-8">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-emerald-500/20 rounded-lg">
+                    <User size={20} className="text-emerald-400" />
+                  </div>
+                  <h2 className="font-bold tracking-widest text-[13px] text-white uppercase">Profile & Work Experience</h2>
+                </div>
+                <div className="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center space-x-1.5">
+                  <ShieldCheck size={14} />
+                  <span>LinkedIn Connected</span>
+                </div>
+              </div>
+
+              {/* Profile Card Summary */}
+              <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6 flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 shadow-lg">
+                {userProfile?.pictureUrl ? (
+                  <img src={userProfile.pictureUrl} alt="Avatar" className="w-20 h-20 rounded-full object-cover border-4 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-emerald-500/20 text-emerald-400 text-2xl font-bold flex items-center justify-center border-4 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.3)] uppercase">
+                    {userProfile?.name ? userProfile.name.charAt(0) : '?'}
+                  </div>
+                )}
+                <div className="text-center sm:text-left flex-1">
+                  <h3 className="text-2xl font-bold text-white mb-1">{userProfile?.name || 'LinkedIn User'}</h3>
+                  <p className="text-slate-400 text-sm flex items-center justify-center sm:justify-start">
+                    <CheckCircle size={14} className="text-emerald-400 mr-1.5" /> Connected to LinkedIn Automation Engine
+                  </p>
+                </div>
+                <button 
+                  onClick={onLogout}
+                  className="flex items-center space-x-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold text-xs transition-all"
+                >
+                  <LogOut size={14} />
+                  <span>Disconnect</span>
+                </button>
+              </div>
+
+              {/* Work History / Experience */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[12px] font-bold text-slate-300 uppercase tracking-widest">
+                    Global AI Context (Work Experience & Bio)
+                  </label>
+                  <span className="text-xs text-emerald-400 font-semibold">Permanently saved for AI content generation</span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  LinkedIn's API privacy policies prevent third-party tools from automatically importing work history. Paste your resume, achievements, or career bio here once—the AI engine will reference this to generate authentic, personalized posts that match your background.
+                </p>
+                <textarea 
+                  placeholder="Paste your work experience, resume bullet points, key achievements, or professional summary here..." 
+                  className="w-full p-5 glass-input text-[15px] text-white placeholder-slate-600 min-h-[220px] resize-y leading-relaxed"
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                />
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-4 flex justify-end">
+                <button 
+                  onClick={handleSaveProfile}
+                  className="flex items-center space-x-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-8 py-3.5 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-105"
+                >
+                  <Save size={18} />
+                  <span>Save Experience & Settings</span>
+                </button>
+              </div>
+
+            </div>
+          )}
+
         </div>
       </div>
     </div>
@@ -666,7 +768,6 @@ export default function App() {
       await axios.post('/api/auth/logout');
       setIsAuthenticated(false);
       setUserProfile(null);
-      // Remove any OAuth URL params so we don't automatically log back in on refresh
       window.history.replaceState({}, document.title, window.location.pathname);
     } catch (err) {
       console.error("Logout failed", err);
