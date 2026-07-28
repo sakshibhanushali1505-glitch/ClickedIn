@@ -262,6 +262,12 @@ app.put('/api/posts/:id/cancel', async (req, res) => {
   }
 });
 
+app.delete('/api/posts/:id', async (req, res) => {
+  const { id } = req.params;
+  await db.deletePost(id);
+  res.json({ success: true });
+});
+
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {

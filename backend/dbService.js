@@ -68,4 +68,16 @@ async function updatePost(id, updates) {
   return updatedPost;
 }
 
-module.exports = { getPosts, savePost, savePosts, getPostById, updatePost };
+async function deletePost(id) {
+  if (useFirestore) {
+    try {
+      await db.collection('posts').doc(id.toString()).delete();
+    } catch (err) {
+      console.error("Firestore delete error:", err);
+    }
+  }
+  memoryPosts = memoryPosts.filter(p => p.id != id);
+  return true;
+}
+
+module.exports = { getPosts, savePost, savePosts, getPostById, updatePost, deletePost };

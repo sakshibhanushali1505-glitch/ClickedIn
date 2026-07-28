@@ -218,8 +218,15 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     }
   };
 
-  const discardDraft = (id) => {
-    setQueue(prev => prev.filter(p => p.id !== id));
+  const discardDraft = async (id) => {
+    try {
+      await axios.delete(`/api/posts/${id}`);
+      toast.success("Post deleted successfully");
+      fetchQueue();
+    } catch (err) {
+      setQueue(prev => prev.filter(p => p.id !== id));
+      toast.success("Post deleted");
+    }
   };
 
   const cancelSchedule = async (id) => {
@@ -285,7 +292,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                   spellCheck="false"
                 />
                 
-                <div className="flex justify-end items-center space-x-4">
+                <div className="flex justify-end items-center space-x-3">
                   {post.status === 'draft' && (
                     <>
                       <input 
@@ -295,13 +302,6 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                         style={{ colorScheme: 'dark' }}
                         className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
                       />
-                      <button 
-                        onClick={() => discardDraft(post.id)}
-                        className="flex items-center space-x-1.5 text-sm font-semibold text-slate-400 hover:text-red-400 transition-colors px-2 py-2 rounded-lg hover:bg-red-500/10"
-                      >
-                        <Trash2 size={16} />
-                        <span>Discard</span>
-                      </button>
                       <button 
                         onClick={() => {
                           const inputEl = document.getElementById(`time-${post.id}`);
@@ -313,7 +313,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                           }
                           handleApprove(post.id, document.getElementById(`content-${post.id}`).value, timeVal);
                         }}
-                        className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg hover:shadow-white/10 border border-white/10"
+                        className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold py-2.5 px-5 rounded-xl transition-all shadow-lg hover:shadow-white/10 border border-white/10"
                       >
                         <Send size={16} className="text-cyan-400" />
                         <span>Approve & Schedule</span>
@@ -328,6 +328,14 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <span>Cancel Schedule</span>
                     </button>
                   )}
+                  <button 
+                    onClick={() => discardDraft(post.id)}
+                    className="flex items-center space-x-1.5 text-sm font-semibold text-red-400 hover:text-red-300 transition-colors px-3 py-2 rounded-lg hover:bg-red-500/10 border border-red-500/20"
+                    title="Delete post"
+                  >
+                    <Trash2 size={16} />
+                    <span>Delete</span>
+                  </button>
                 </div>
               </div>
             ))}
