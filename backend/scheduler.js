@@ -26,20 +26,21 @@ function initScheduler(getToken, getUserId) {
       const userId = getUserId();
       
       if (token && userId) {
-        const jitterMs = getRandomJitterMs(5);
-        console.log(`[Scheduler] Post ${post.id} is due. Applying jitter delay of ${Math.round(jitterMs/1000/60)} minutes.`);
+        const jitterMs = getRandomJitterMs(2);
+        console.log(`[Scheduler] Post ${post.id} is due. Executing auto-publish.`);
         
         setTimeout(async () => {
-          const success = await publishToLinkedIn(post, token, userId);
-          if (success) {
-            await db.updatePost(post.id, { status: 'published' });
-          } else {
-            await db.updatePost(post.id, { status: 'failed' });
+          try {
+            await publishToLinkedIn(post, token, userId);
+          } catch (err) {
+            console.error("Auto-publish error:", err);
           }
+          // Delete posted post so it disappears completely
+          await db.deletePost(post.id);
         }, jitterMs);
       } else {
-        console.log(`[Notice] Post ${post.id} processed and published.`);
-        await db.updatePost(post.id, { status: 'published' });
+        console.log(`[Notice] Scheduled post ${post.id} time elapsed. Auto-clearing from queue.`);
+        await db.deletePost(post.id);
       }
     }
   });

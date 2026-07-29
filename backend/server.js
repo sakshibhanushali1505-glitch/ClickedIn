@@ -125,8 +125,22 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/posts', async (req, res) => {
   const posts = await db.getPosts();
-  // Sort posts by ID descending (newest first)
-  res.json(posts.sort((a, b) => b.id - a.id));
+  const now = new Date();
+  
+  const activePosts = [];
+  for (const post of posts) {
+    const isPastScheduled = post.scheduledTime && new Date(post.scheduledTime) <= now;
+    const isPublished = post.status === 'published' || post.status === 'posted';
+    
+    if (isPastScheduled || isPublished) {
+      // Auto-delete published or past scheduled posts so they immediately disappear
+      await db.deletePost(post.id);
+    } else {
+      activePosts.push(post);
+    }
+  }
+  
+  res.json(activePosts.sort((a, b) => b.id - a.id));
 });
 
 app.post('/api/posts', async (req, res) => {

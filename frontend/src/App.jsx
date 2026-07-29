@@ -122,8 +122,17 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const fetchQueue = async () => {
     try {
       const res = await axios.get('/api/posts');
-      // Filter out posts that are already published or posted so they disappear from drafting and scheduling page
-      const activePosts = res.data.filter(p => p.status !== 'published' && p.status !== 'posted');
+      const now = new Date();
+      // Filter out posts that are already published, posted, or whose scheduled time has elapsed
+      const activePosts = res.data.filter(p => {
+        if (p.status === 'published' || p.status === 'posted') return false;
+        if (p.scheduledTime && new Date(p.scheduledTime) <= now) {
+          // Trigger background deletion for past scheduled posts so they disappear from server
+          axios.delete(`/api/posts/${p.id}`).catch(() => {});
+          return false;
+        }
+        return true;
+      });
       setQueue(activePosts);
     } catch (err) {
       console.error("Error fetching queue", err);
