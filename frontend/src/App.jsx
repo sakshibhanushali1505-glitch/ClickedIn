@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers, Save, CheckCircle } from 'lucide-react';
+import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers, Save, CheckCircle, Users, Play, ShieldAlert, Check, X } from 'lucide-react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -104,6 +104,16 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const [postCount, setPostCount] = useState(1);
   const [hoursGap, setHoursGap] = useState(4);
   const [minutesGap, setMinutesGap] = useState(0);
+  const [fullyAutomated, setFullyAutomated] = useState(false);
+  const [automatedPostCount, setAutomatedPostCount] = useState(1);
+  const [automatedStartTime, setAutomatedStartTime] = useState("10:00");
+  const [automatedEndTime, setAutomatedEndTime] = useState("21:00");
+  
+  // Connections tab state
+  const [trialStatus, setTrialStatus] = useState({ isActive: false, daysLeft: 0, started: false });
+  const [connTargets, setConnTargets] = useState('');
+  const [connMessage, setConnMessage] = useState('');
+  const [connQueue, setConnQueue] = useState([]);
   
   const [queue, setQueue] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -116,6 +126,48 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   }, []);
 
   useEffect(() => {
+    fetchSettings();
+    fetchConnectionsTrial();
+    fetchConnectionsQueue();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await axios.get('/api/user/settings');
+      if (res.data) {
+        if (res.data.context) setContext(res.data.context);
+        if (res.data.fullyAutomated !== undefined) setFullyAutomated(res.data.fullyAutomated);
+        if (res.data.automatedPostCount !== undefined) setAutomatedPostCount(res.data.automatedPostCount);
+        if (res.data.automatedStartTime) setAutomatedStartTime(res.data.automatedStartTime);
+        if (res.data.automatedEndTime) setAutomatedEndTime(res.data.automatedEndTime);
+      }
+    } catch (err) {
+      if (err.response?.status === 401) {
+        window.location.reload();
+      }
+      console.error("Error fetching settings", err);
+    }
+  };
+
+  const fetchConnectionsTrial = async () => {
+    try {
+      const res = await axios.get('/api/connections/trial');
+      setTrialStatus(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchConnectionsQueue = async () => {
+    try {
+      const res = await axios.get('/api/connections/queue');
+      setConnQueue(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
     localStorage.setItem('userWorkHistory', context);
   }, [context]);
 
@@ -123,14 +175,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     try {
       const res = await axios.get('/api/posts');
       const now = new Date();
-      // Filter out posts that are already published, posted, or whose scheduled time has elapsed
+      // Keep posts that are in the queue until the backend naturally removes them upon publishing
       const activePosts = res.data.filter(p => {
         if (p.status === 'published' || p.status === 'posted') return false;
-        if (p.scheduledTime && new Date(p.scheduledTime) <= now) {
-          // Trigger background deletion for past scheduled posts so they disappear from server
-          axios.delete(`/api/posts/${p.id}`).catch(() => {});
-          return false;
-        }
         return true;
       });
       setQueue(activePosts);
@@ -139,9 +186,37 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     localStorage.setItem('userWorkHistory', context);
-    toast.success("Profile experience & settings saved successfully!");
+    try {
+      await axios.post('/api/user/settings', { context, fullyAutomated, automatedPostCount, automatedStartTime, automatedEndTime });
+      toast.success("Profile experience & settings saved successfully!");
+    } catch (err) {
+      if (err.response?.status === 401) {
+        window.location.reload();
+        return;
+      }
+      toast.error("Failed to save settings to server.");
+    }
+  };
+
+  const handleRunAutomation = async () => {
+    const toastId = toast.loading("Generating today's automated posts...");
+    try {
+      // Save latest settings first
+      await axios.post('/api/user/settings', { context, fullyAutomated, automatedPostCount, automatedStartTime, automatedEndTime });
+      
+      await axios.post('/api/user/automation/run');
+      toast.success("Automated posts generated and scheduled successfully!", { id: toastId });
+      setActiveTab('schedule');
+      fetchQueue();
+    } catch (err) {
+      if (err.response?.status === 401) {
+        window.location.reload();
+        return;
+      }
+      toast.error("Failed to run automation.", { id: toastId });
+    }
   };
 
   const handleGenerate = async (e) => {
@@ -153,27 +228,55 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     setIsGenerating(true);
     const toastId = toast.loading("AI is crafting your posts...");
     try {
-      const res = await axios.post('/api/posts', {
+      await axios.post('/api/posts', {
         topic,
         context,
-        size, tone, 
+        size,
+        tone,
         count: postCount,
+        baseTime: new Date().toISOString(),
         hoursGap,
         minutesGap
       });
-      if (Array.isArray(res.data)) {
-        setQueue(prev => [...prev, ...res.data]);
-      } else {
-        setQueue(prev => [...prev, res.data]);
-      }
       toast.success(`${postCount} post(s) generated successfully!`, { id: toastId });
-      // Switch seamlessly to Timing & Batch Schedule tab to view and schedule generated posts
       setActiveTab('schedule');
+      fetchQueue();
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
     }
     setIsGenerating(false);
+  };
+
+  const handleStartTrial = async () => {
+    try {
+      const res = await axios.post('/api/connections/trial/start');
+      setTrialStatus(res.data);
+      toast.success("7-Day Premium Trial Started!");
+    } catch (err) {
+      toast.error("Could not start trial.");
+    }
+  };
+
+  const handleQueueConnections = async () => {
+    if (!connTargets) {
+      toast.error("Please enter at least one target role/company.");
+      return;
+    }
+    const targets = connTargets.split(',').map(t => t.trim()).filter(t => t);
+    if (targets.length === 0) return;
+    
+    try {
+      const res = await axios.post('/api/connections/queue', { targets, message: connMessage });
+      if (res.data.success) {
+        toast.success(`Queued ${res.data.queued} connection requests!`);
+        setConnTargets('');
+        setConnMessage('');
+        fetchConnectionsQueue();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to queue connections.");
+    }
   };
 
   const handleApprove = async (id, currentContent, scheduledTime) => {
@@ -453,6 +556,30 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             <User size={18} className={activeTab === 'profile' ? 'text-emerald-400' : ''} />
             <span>Profile & Experience</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('automated')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3.5 px-5 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'automated'
+                ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/40 text-blue-300 shadow-[0_0_20px_rgba(59,130,246,0.2)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Sparkles size={18} className={activeTab === 'automated' ? 'text-blue-400' : ''} />
+            <span>Automated Posts</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('connections')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3.5 px-5 rounded-xl font-bold text-sm transition-all duration-300 ${
+              activeTab === 'connections'
+                ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Users size={18} className={activeTab === 'connections' ? 'text-amber-400' : ''} />
+            <span>Connections (Premium)</span>
+          </button>
         </div>
 
         <div className="max-w-5xl mx-auto w-full space-y-8">
@@ -715,6 +842,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 />
               </div>
 
+
               {/* Action Button */}
               <div className="pt-4 flex justify-end">
                 <button 
@@ -726,6 +854,213 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                 </button>
               </div>
 
+            </div>
+          )}
+
+          {/* TAB 4: AUTOMATED POSTS */}
+          {activeTab === 'automated' && (
+            <div className="glass-card z-20 animate-fade-in p-8 space-y-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-500 flex items-center">
+                    <Sparkles className="mr-3 text-cyan-500" />
+                    Fully Automated Daily Posting
+                  </h2>
+                  <p className="text-slate-400 mt-2">Set up AI to automatically generate and schedule relevant posts daily.</p>
+                </div>
+              </div>
+
+              <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6 shadow-lg flex flex-col space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-[15px] font-bold text-white flex items-center space-x-2">
+                      <Sparkles size={16} className="text-cyan-400" />
+                      <span>Enable Automation</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Turn this on to let AI handle your daily posting based on your work experience.
+                    </p>
+                  </div>
+                  
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={fullyAutomated}
+                      onChange={(e) => {
+                        if (e.target.checked && (!context || context.trim() === '')) {
+                          toast.error("You must fill out your Work Experience in the Profile tab first!");
+                          return;
+                        }
+                        setFullyAutomated(e.target.checked);
+                      }}
+                    />
+                    <div className="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-emerald-500 peer-checked:to-teal-500 shadow-inner"></div>
+                  </label>
+                </div>
+                
+                {fullyAutomated && (
+                  <div className="flex flex-col space-y-4 border-t border-white/10 pt-4 mt-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-slate-300">
+                        Posts Per Day
+                      </div>
+                      <div className="flex items-center space-x-3 bg-black/20 p-1.5 rounded-xl border border-white/5">
+                        <button 
+                          onClick={() => setAutomatedPostCount(Math.max(1, automatedPostCount - 1))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white font-bold transition-all"
+                        >-</button>
+                        <span className="w-6 text-center text-white font-black">{automatedPostCount}</span>
+                        <button 
+                          onClick={() => setAutomatedPostCount(Math.min(5, automatedPostCount + 1))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white font-bold transition-all"
+                        >+</button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-slate-300">
+                        Posting Time Window
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input 
+                          type="time" 
+                          value={automatedStartTime} 
+                          onChange={e => setAutomatedStartTime(e.target.value)} 
+                          className="glass-input rounded-lg px-2 py-1 text-[13px] text-white w-[100px]"
+                          style={{ colorScheme: 'dark' }}
+                        />
+                        <span className="text-slate-500 font-bold">to</span>
+                        <input 
+                          type="time" 
+                          value={automatedEndTime} 
+                          onChange={e => setAutomatedEndTime(e.target.value)} 
+                          className="glass-input rounded-lg px-2 py-1 text-[13px] text-white w-[100px]"
+                          style={{ colorScheme: 'dark' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 flex justify-end space-x-4">
+                {fullyAutomated && (
+                  <button 
+                    onClick={handleRunAutomation}
+                    className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-3.5 rounded-2xl transition-all hover:scale-105 border border-white/10"
+                  >
+                    <Sparkles size={18} className="text-cyan-400" />
+                    <span>Generate Today's Posts Now</span>
+                  </button>
+                )}
+                <button 
+                  onClick={handleSaveProfile}
+                  className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 text-white font-bold px-8 py-3.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all hover:scale-105"
+                >
+                  <Save size={18} />
+                  <span>Save Automation Settings</span>
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 5: CONNECTIONS */}
+          {activeTab === 'connections' && (
+            <div className="glass-card z-20 animate-fade-in p-8 space-y-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 flex items-center">
+                    <Users className="mr-3 text-amber-500" />
+                    Automated Connections (Premium)
+                  </h2>
+                  <p className="text-slate-400 mt-2">Target profiles and auto-connect with personalized messages.</p>
+                </div>
+                {!trialStatus.isActive && !trialStatus.started && (
+                  <button onClick={handleStartTrial} className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg hover:scale-105 transition-all">
+                    Start 7-Day Free Trial
+                  </button>
+                )}
+                {trialStatus.isActive && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 px-4 py-2 rounded-xl text-amber-400 font-bold flex items-center">
+                    <Clock size={16} className="mr-2" />
+                    Trial Active: {trialStatus.daysLeft} days left
+                  </div>
+                )}
+                {!trialStatus.isActive && trialStatus.started && (
+                  <div className="bg-red-500/10 border border-red-500/30 px-4 py-2 rounded-xl text-red-400 font-bold flex items-center">
+                    <ShieldAlert size={16} className="mr-2" />
+                    Trial Expired
+                  </div>
+                )}
+              </div>
+
+              {trialStatus.isActive && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-300 mb-2">Target Roles / Companies (comma separated)</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g., Founders, Marketing Managers, Microsoft" 
+                        className="w-full p-4 glass-input text-white placeholder-slate-500"
+                        value={connTargets}
+                        onChange={(e) => setConnTargets(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-300 mb-2">Intro Message (Optional)</label>
+                      <textarea 
+                        placeholder="Hi! I'd love to connect and follow your work..." 
+                        className="w-full p-4 glass-input text-white placeholder-slate-500 min-h-[120px]"
+                        value={connMessage}
+                        onChange={(e) => setConnMessage(e.target.value)}
+                      />
+                    </div>
+                    <button 
+                      onClick={handleQueueConnections}
+                      className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold py-3.5 rounded-xl shadow-lg hover:scale-[1.02] transition-all flex items-center justify-center"
+                    >
+                      <Play size={18} className="mr-2" /> Start Automation Queue
+                    </button>
+                  </div>
+
+                  <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+                      <Clock size={18} className="text-amber-400 mr-2" />
+                      Active Queue ({connQueue.filter(c => c.status === 'queued').length})
+                    </h3>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {connQueue.length === 0 ? (
+                        <p className="text-slate-500 text-center py-8">Queue is empty.</p>
+                      ) : (
+                        connQueue.map(c => (
+                          <div key={c.id} className="bg-white/5 p-4 rounded-xl flex items-center justify-between">
+                            <div>
+                              <p className="text-white font-semibold">{c.target}</p>
+                              <p className="text-xs text-slate-400 truncate w-[200px]">{c.message || "No message"}</p>
+                            </div>
+                            <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                              c.status === 'sent' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {c.status.toUpperCase()}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!trialStatus.isActive && !trialStatus.started && (
+                <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-10 text-center">
+                  <Star size={48} className="mx-auto text-amber-500 mb-4" />
+                  <h3 className="text-2xl font-black text-white mb-2">Unlock Growth with Automated Connections</h3>
+                  <p className="text-slate-400 max-w-lg mx-auto mb-6">Set up your target audience, customize your connection message, and let AI expand your network 24/7 without lifting a finger.</p>
+                </div>
+              )}
             </div>
           )}
 

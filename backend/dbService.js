@@ -3,6 +3,7 @@ const { Firestore } = require('@google-cloud/firestore');
 let db = null;
 let useFirestore = false;
 let memoryPosts = []; // Fallback
+let memoryUsers = {}; // Fallback for user settings
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasCredentials = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -80,4 +81,38 @@ async function deletePost(id) {
   return true;
 }
 
-module.exports = { getPosts, savePost, savePosts, getPostById, updatePost, deletePost };
+async function getUserSettings(userId) {
+  if (!useFirestore) return memoryUsers[userId] || {};
+  try {
+    const doc = await db.collection('users').doc(userId.toString()).get();
+    return doc.exists ? doc.data() : {};
+  } catch (err) {
+    console.error("Firestore get user error:", err);
+    return memoryUsers[userId] || {};
+  }
+}
+
+async function saveUserSettings(userId, settings) {
+  if (useFirestore) {
+    try {
+      await db.collection('users').doc(userId.toString()).set(settings, { merge: true });
+    } catch (err) {
+      console.error("Firestore save user error:", err);
+    }
+  }
+  memoryUsers[userId] = { ...memoryUsers[userId], ...settings };
+  return memoryUsers[userId];
+}
+
+async function getAllUsersWithSettings() {
+  if (!useFirestore) return Object.entries(memoryUsers).map(([id, data]) => ({ id, ...data }));
+  try {
+    const snapshot = await db.collection('users').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (err) {
+    console.error("Firestore get users error:", err);
+    return Object.entries(memoryUsers).map(([id, data]) => ({ id, ...data }));
+  }
+}
+
+module.exports = { getPosts, savePost, savePosts, getPostById, updatePost, deletePost, getUserSettings, saveUserSettings, getAllUsersWithSettings };

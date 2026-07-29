@@ -2,10 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { generatePostContent } = require('./aiService');
 const axios = require('axios');
 const path = require('path');
-const { initScheduler } = require('./scheduler');
+const { initScheduler, runDailyAutomation } = require('./scheduler');
 const db = require('./dbService');
 
 const app = express();
@@ -123,17 +123,75 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/user/settings', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const settings = await db.getUserSettings(linkedInProfile.id);
+  res.json(settings);
+});
+
+app.post('/api/user/settings', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const settings = req.body;
+  const updated = await db.saveUserSettings(linkedInProfile.id, settings);
+  res.json(updated);
+});
+
+app.post('/api/user/automation/run', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const success = await runDailyAutomation(linkedInProfile.id);
+    if (!success) {
+      return res.status(500).json({ error: "Failed to run automation. The AI generation may be experiencing high demand." });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to run automation." });
+  }
+});
+
+const connections = require('./connections');
+
+app.get('/api/connections/trial', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+  res.json(trialStatus);
+});
+
+app.post('/api/connections/trial/start', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const trialStatus = await connections.startTrial(linkedInProfile.id);
+  res.json(trialStatus);
+});
+
+app.post('/api/connections/queue', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+  
+  if (!trialStatus.isActive && trialStatus.started) {
+    return res.status(403).json({ error: "Premium trial has expired." });
+  }
+
+  const { targets, message } = req.body;
+  const queued = await connections.queueConnections(linkedInProfile.id, targets, message);
+  res.json({ success: true, queued: queued.length });
+});
+
+app.get('/api/connections/queue', async (req, res) => {
+  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+  const settings = await db.getUserSettings(linkedInProfile.id);
+  res.json(settings.connectionQueue || []);
+});
+
 app.get('/api/posts', async (req, res) => {
-  const posts = await db.getPosts();
-  const now = new Date();
+  let posts = await db.getPosts();
+  posts = posts.filter(p => !p.userId || p.userId === linkedInProfile.id);
   
   const activePosts = [];
   for (const post of posts) {
-    const isPastScheduled = post.scheduledTime && new Date(post.scheduledTime) <= now;
     const isPublished = post.status === 'published' || post.status === 'posted';
     
-    if (isPastScheduled || isPublished) {
-      // Auto-delete published or past scheduled posts so they immediately disappear
+    if (isPublished) {
+      // Auto-delete published posts so they disappear from queue
       await db.deletePost(post.id);
     } else {
       activePosts.push(post);
@@ -206,40 +264,8 @@ app.post('/api/posts', async (req, res) => {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-
-    const postCount = parseInt(req.body.count) || 1;
-    let prompt = `Write ${postCount} highly engaging, distinct LinkedIn post(s) about "${topic}".\n`;
-
-    if (context && context.trim() !== '') {
-      prompt += `\nThe author's professional context/background is: "${context}". Please weave this personal perspective and industry experience into the post organically. You may mention the author's professional title or role, but DO NOT repeatedly name-drop the author's company name. Mention the company name at most once, or preferably speak from the perspective of an insider without explicitly stating the company name at all.\n`;
-    }
-
-    prompt += `
-Focus specifically on the current, ongoing market situation and recent trends regarding this topic. The content MUST feel fresh, highly relevant to today's industry climate, and offer unique insights rather than generic advice.
-
-Tone Requirements: ${tone} (If Professional, be authoritative. If Casual, use conversational language. If Thought Leadership, be contrarian and visionary).
-Length Requirements: ${size} (If Short, strictly 1-2 brief paragraphs. If Medium, strictly 3-4 paragraphs. If Long, strictly 5-7 paragraphs with deep insights and structural formatting like lists).
-
-CRITICAL RULE 1: DO NOT use the long em-dash character (—) or en-dash (–) anywhere in your response under any circumstances. If you need to separate clauses or break a sentence, use commas, periods, or a standard short hyphen (-).
-
-CRITICAL RULE 2: If the Tone is "Professional" or "Thought Leadership", you are STRICTLY FORBIDDEN from using ANY emojis anywhere in the response. No exceptions. If the Tone is "Casual", you MAY use emojis. The current Tone for this request is "${tone}".
-
-Include 2-3 relevant hashtags at the bottom of each post. Do not wrap the response in quotes or include any preamble.`;
-
-    if (postCount > 1) {
-      prompt += `\nCRITICAL: You are writing MULTIPLE posts. You MUST separate each distinct post exactly with this string on its own line: ---POST_SEPARATOR---. Make sure each post tackles a slightly different angle or perspective of the topic so they are distinct.`;
-    }
-
-    const result = await model.generateContent(prompt);
-    const generatedContent = result.response.text().trim();
-
-    let contents = [generatedContent];
-    if (postCount > 1) {
-      contents = generatedContent.split('---POST_SEPARATOR---').map(c => c.trim()).filter(c => c);
-    }
-
+    const contents = await generatePostContent(topic, context, size, tone, postCount);
+    
     const baseTime = req.body.baseTime ? new Date(req.body.baseTime) : null;
     const hoursGap = parseInt(req.body.hoursGap) || 0;
     const minutesGap = parseInt(req.body.minutesGap) || 0;
@@ -301,6 +327,7 @@ app.put('/api/posts/:id/cancel', async (req, res) => {
 
 app.delete('/api/posts/:id', async (req, res) => {
   const { id } = req.params;
+  console.warn(`[WARNING] Client requested DELETION of post ${id}!`);
   await db.deletePost(id);
   res.json({ success: true });
 });

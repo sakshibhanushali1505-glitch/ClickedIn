@@ -19,6 +19,11 @@ async function publishToLinkedIn(post, token, userId) {
     return false;
   }
   
+  if (token.startsWith('mock_oauth_token')) {
+    console.log(`[LinkedIn API] Simulating successful publish for demo token.`);
+    return true;
+  }
+
   // 2. Call the Official LinkedIn REST API (OAuth 2.0)
   try {
     const response = await axios.post(
