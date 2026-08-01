@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers, Save, CheckCircle, Users, Play, ShieldAlert, Check, X } from 'lucide-react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
+import ActivityTracker from './components/ActivityTracker';
+import AdminPanel from './pages/AdminPanel';
+import { trackActivity } from './lib/activity';
 
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -1073,11 +1076,13 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const isAdminRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('success') === 'linkedin_connected') {
       setIsAuthenticated(true);
+      trackActivity('login', { label: 'linkedin_connected' });
       window.history.replaceState({}, document.title, window.location.pathname);
     }
     checkAuthStatus();
@@ -1098,11 +1103,20 @@ export default function App() {
   const handleLogin = (profile) => {
     setIsAuthenticated(true);
     setUserProfile(profile);
+    trackActivity('login', {
+      userId: profile?.id,
+      userName: profile?.name,
+      label: 'client_login',
+    });
   };
 
   const handleLogout = async () => {
     try {
       await axios.post('/api/auth/logout');
+      trackActivity('logout', {
+        userId: userProfile?.id,
+        userName: userProfile?.name,
+      });
       setIsAuthenticated(false);
       setUserProfile(null);
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -1111,10 +1125,21 @@ export default function App() {
     }
   };
 
+  if (isAdminRoute) {
+    return (
+      <>
+        <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+        <ActivityTracker userProfile={userProfile} />
+        <AdminPanel />
+      </>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <>
         <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+        <ActivityTracker userProfile={null} />
         <LoginPage onLogin={handleLogin} />
       </>
     );
@@ -1123,6 +1148,7 @@ export default function App() {
   return (
     <>
       <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+      <ActivityTracker userProfile={userProfile} />
       <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />
     </>
   );

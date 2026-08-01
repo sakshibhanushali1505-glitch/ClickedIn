@@ -91,6 +91,19 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
       pictureUrl: profileResponse.data.picture
     };
 
+    await db.saveUserSettings(linkedInProfile.id, {
+      accessToken: userAccessToken,
+      linkedInProfile,
+    });
+    db.logActivity({
+      event: 'login',
+      path: '/api/auth/linkedin/callback',
+      label: 'LinkedIn OAuth',
+      userId: linkedInProfile.id,
+      userName: linkedInProfile.name,
+      ...db.pickRequestMeta(req),
+    }).catch(() => {});
+
     // Redirect back to dashboard with success
     res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
   } catch (err) {
@@ -330,6 +343,77 @@ app.delete('/api/posts/:id', async (req, res) => {
   console.warn(`[WARNING] Client requested DELETION of post ${id}!`);
   await db.deletePost(id);
   res.json({ success: true });
+});
+
+// ---------- Visitor tracking + admin (VetPet-style) ----------
+const ADMIN_PASSWORD = process.env.CLICKEDIN_ADMIN_PASSWORD || 'clickedin-admin-2026';
+
+function requireAdmin(req, res, next) {
+  const key = req.headers['x-admin-key'] || req.query.adminKey || '';
+  if (!key || key !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+app.post('/api/track', async (req, res) => {
+  try {
+    const { event, path: pagePath, label, metadata, sessionId, userId, userName } = req.body || {};
+    if (!event || typeof event !== 'string') {
+      return res.status(400).json({ error: 'event required' });
+    }
+    if (!sessionId && !userId) {
+      return res.status(400).json({ error: 'sessionId required for anonymous events' });
+    }
+    const meta = db.pickRequestMeta(req);
+    const doc = await db.logActivity({
+      event: String(event).slice(0, 64),
+      path: String(pagePath || req.headers.referer || '/').slice(0, 500),
+      label: label ? String(label).slice(0, 200) : null,
+      metadata: metadata && typeof metadata === 'object' ? metadata : {},
+      sessionId: sessionId ? String(sessionId).slice(0, 120) : null,
+      userId: userId ? String(userId).slice(0, 200) : (linkedInProfile?.id || null),
+      userName: userName ? String(userName).slice(0, 200) : (linkedInProfile?.name || null),
+      ...meta,
+    });
+    res.json({ ok: true, id: doc.id });
+  } catch (err) {
+    console.error('track error', err);
+    res.status(500).json({ error: 'track failed' });
+  }
+});
+
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body || {};
+  if (password && password === ADMIN_PASSWORD) {
+    return res.json({ ok: true, adminKey: ADMIN_PASSWORD });
+  }
+  return res.status(401).json({ error: 'Invalid password' });
+});
+
+app.get('/api/admin/access', requireAdmin, (req, res) => {
+  res.json({ isAdmin: true });
+});
+
+app.get('/api/admin/dashboard', requireAdmin, async (req, res) => {
+  try {
+    const data = await db.getAdminDashboard();
+    res.json(data);
+  } catch (err) {
+    console.error('admin dashboard error', err);
+    res.status(500).json({ error: 'dashboard failed' });
+  }
+});
+
+app.get('/api/admin/activity', requireAdmin, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 100;
+    const items = await db.listActivity({ limit });
+    res.json({ items });
+  } catch (err) {
+    console.error('admin activity error', err);
+    res.status(500).json({ error: 'activity failed' });
+  }
 });
 
 // Serve frontend static files
