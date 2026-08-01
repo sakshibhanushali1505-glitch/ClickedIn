@@ -5,6 +5,7 @@ let useFirestore = false;
 let memoryPosts = []; // Fallback
 let memoryUsers = {}; // Fallback for user settings
 let memoryActivity = []; // Fallback visitor / activity events
+let memorySessions = {}; // Fallback auth sessions { [id]: session }
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasCredentials = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -245,6 +246,44 @@ async function getAdminDashboard() {
   };
 }
 
+async function saveSession(session) {
+  if (useFirestore) {
+    try {
+      await db.collection('sessions').doc(session.id).set(session);
+      return session;
+    } catch (err) {
+      console.error('Firestore save session error:', err);
+    }
+  }
+  memorySessions[session.id] = session;
+  return session;
+}
+
+async function getSession(sessionId) {
+  if (!sessionId) return null;
+  if (useFirestore) {
+    try {
+      const doc = await db.collection('sessions').doc(String(sessionId)).get();
+      return doc.exists ? doc.data() : null;
+    } catch (err) {
+      console.error('Firestore get session error:', err);
+    }
+  }
+  return memorySessions[sessionId] || null;
+}
+
+async function deleteSession(sessionId) {
+  if (!sessionId) return;
+  if (useFirestore) {
+    try {
+      await db.collection('sessions').doc(String(sessionId)).delete();
+    } catch (err) {
+      console.error('Firestore delete session error:', err);
+    }
+  }
+  delete memorySessions[sessionId];
+}
+
 module.exports = {
   getPosts,
   savePost,
@@ -259,4 +298,7 @@ module.exports = {
   logActivity,
   listActivity,
   getAdminDashboard,
+  saveSession,
+  getSession,
+  deleteSession,
 };

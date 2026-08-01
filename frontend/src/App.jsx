@@ -6,6 +6,9 @@ import ActivityTracker from './components/ActivityTracker';
 import AdminPanel from './pages/AdminPanel';
 import { trackActivity } from './lib/activity';
 
+// Send session cookie on every API call (multi-user auth)
+axios.defaults.withCredentials = true;
+
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -1076,12 +1079,13 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const isAdminRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'linkedin_connected') {
-      setIsAuthenticated(true);
+    const justConnected = urlParams.get('success') === 'linkedin_connected';
+    if (justConnected) {
       trackActivity('login', { label: 'linkedin_connected' });
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -1090,13 +1094,20 @@ export default function App() {
 
   const checkAuthStatus = async () => {
     try {
-      const res = await axios.get('/api/auth/status');
+      const res = await axios.get('/api/auth/status', { withCredentials: true });
       if (res.data.connected) {
         setIsAuthenticated(true);
         setUserProfile(res.data.profile);
+      } else {
+        setIsAuthenticated(false);
+        setUserProfile(null);
       }
     } catch (err) {
       console.error("Auth status error", err);
+      setIsAuthenticated(false);
+      setUserProfile(null);
+    } finally {
+      setAuthReady(true);
     }
   };
 
@@ -1132,6 +1143,14 @@ export default function App() {
         <ActivityTracker userProfile={userProfile} />
         <AdminPanel />
       </>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#07080A] text-slate-400 text-sm">
+        Restoring your session…
+      </div>
     );
   }
 

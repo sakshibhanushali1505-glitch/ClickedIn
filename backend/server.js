@@ -1,28 +1,31 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
+const cookieParser = require('cookie-parser');
 const { generatePostContent } = require('./aiService');
 const axios = require('axios');
 const path = require('path');
 const { initScheduler, runDailyAutomation } = require('./scheduler');
 const db = require('./dbService');
+const auth = require('./authSession');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.set('trust proxy', 1);
 
-// Auth state (still in-memory for MVP, can be moved to Firestore later)
-let userAccessToken = null;
-let linkedInProfile = null;
-
-// Determine environment URLs
 const isProd = process.env.NODE_ENV === 'production';
 const FRONTEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5173';
 const BACKEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5000';
 
-// Start the scheduler
-initScheduler(() => userAccessToken, () => linkedInProfile?.id);
+app.use(cors({
+  origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5000'],
+  credentials: true,
+}));
+app.use(express.json());
+app.use(cookieParser());
+app.use(auth.attachAuth);
+
+// Per-user scheduled publishing (loads each user's LinkedIn token from Firestore)
+initScheduler();
 
 // LinkedIn OAuth Routes
 app.get('/api/auth/linkedin', (req, res) => {
@@ -51,11 +54,21 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
+  const meta = db.pickRequestMeta(req);
 
   // Fallback to Demo Mode if real credentials aren't provided yet
   if (!clientId || !clientSecret || clientId === 'mock_client_id') {
-    userAccessToken = 'mock_oauth_token_' + code;
-    linkedInProfile = { name: "Demo User", id: "urn:li:person:12345" };
+    const profile = { name: 'Demo User', id: `demo_${code || 'user'}` };
+    const accessToken = 'mock_oauth_token_' + code;
+    await auth.establishLogin(res, profile, accessToken, meta);
+    db.logActivity({
+      event: 'login',
+      path: '/api/auth/linkedin/callback',
+      label: 'Demo OAuth',
+      userId: profile.id,
+      userName: profile.name,
+      ...meta,
+    }).catch(() => {});
     return res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
   }
 
@@ -76,32 +89,29 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
       }
     });
 
-    userAccessToken = tokenResponse.data.access_token;
+    const accessToken = tokenResponse.data.access_token;
 
     // 2. Fetch the user's basic profile from LinkedIn
     const profileResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
       headers: {
-        Authorization: `Bearer ${userAccessToken}`
+        Authorization: `Bearer ${accessToken}`
       }
     });
 
-    linkedInProfile = {
+    const profile = {
       name: profileResponse.data.name,
       id: profileResponse.data.sub,
       pictureUrl: profileResponse.data.picture
     };
 
-    await db.saveUserSettings(linkedInProfile.id, {
-      accessToken: userAccessToken,
-      linkedInProfile,
-    });
+    await auth.establishLogin(res, profile, accessToken, meta);
     db.logActivity({
       event: 'login',
       path: '/api/auth/linkedin/callback',
       label: 'LinkedIn OAuth',
-      userId: linkedInProfile.id,
-      userName: linkedInProfile.name,
-      ...db.pickRequestMeta(req),
+      userId: profile.id,
+      userName: profile.name,
+      ...meta,
     }).catch(() => {});
 
     // Redirect back to dashboard with success
@@ -112,47 +122,48 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
   }
 });
 
-app.get('/api/auth/demo', (req, res) => {
-  userAccessToken = "demo_access_token";
-  linkedInProfile = {
-    name: "Sakshi Bhanushali",
-    id: "sakshi_1505",
-    pictureUrl: linkedInProfile?.pictureUrl || ""
+app.get('/api/auth/demo', async (req, res) => {
+  const profile = {
+    name: 'Sakshi Bhanushali',
+    id: 'sakshi_1505',
+    pictureUrl: '',
   };
+  await auth.establishLogin(res, profile, 'demo_access_token', db.pickRequestMeta(req));
   res.redirect(`/?success=linkedin_connected`);
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (userAccessToken) {
-    res.json({ connected: true, profile: linkedInProfile });
-  } else {
-    res.json({ connected: false });
+  if (req.auth?.userId) {
+    return res.json({ connected: true, profile: req.auth.profile });
   }
+  return res.json({ connected: false });
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  userAccessToken = null;
-  linkedInProfile = null;
+app.post('/api/auth/logout', async (req, res) => {
+  const sid = req.cookies?.[auth.COOKIE_NAME];
+  await auth.destroySession(sid);
+  auth.clearSessionCookie(res);
   res.json({ success: true });
 });
 
-app.get('/api/user/settings', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const settings = await db.getUserSettings(linkedInProfile.id);
-  res.json(settings);
+app.get('/api/user/settings', auth.requireAuth, async (req, res) => {
+  const settings = await db.getUserSettings(req.auth.userId);
+  // Never send access token to the browser
+  const { accessToken, ...safe } = settings || {};
+  res.json(safe);
 });
 
-app.post('/api/user/settings', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const settings = req.body;
-  const updated = await db.saveUserSettings(linkedInProfile.id, settings);
-  res.json(updated);
+app.post('/api/user/settings', auth.requireAuth, async (req, res) => {
+  const settings = { ...req.body };
+  delete settings.accessToken; // clients cannot overwrite LinkedIn token
+  const updated = await db.saveUserSettings(req.auth.userId, settings);
+  const { accessToken, ...safe } = updated || {};
+  res.json(safe);
 });
 
-app.post('/api/user/automation/run', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+app.post('/api/user/automation/run', auth.requireAuth, async (req, res) => {
   try {
-    const success = await runDailyAutomation(linkedInProfile.id);
+    const success = await runDailyAutomation(req.auth.userId);
     if (!success) {
       return res.status(500).json({ error: "Failed to run automation. The AI generation may be experiencing high demand." });
     }
@@ -164,40 +175,36 @@ app.post('/api/user/automation/run', async (req, res) => {
 
 const connections = require('./connections');
 
-app.get('/api/connections/trial', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+app.get('/api/connections/trial', auth.requireAuth, async (req, res) => {
+  const trialStatus = await connections.getTrialStatus(req.auth.userId);
   res.json(trialStatus);
 });
 
-app.post('/api/connections/trial/start', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.startTrial(linkedInProfile.id);
+app.post('/api/connections/trial/start', auth.requireAuth, async (req, res) => {
+  const trialStatus = await connections.startTrial(req.auth.userId);
   res.json(trialStatus);
 });
 
-app.post('/api/connections/queue', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+app.post('/api/connections/queue', auth.requireAuth, async (req, res) => {
+  const trialStatus = await connections.getTrialStatus(req.auth.userId);
   
   if (!trialStatus.isActive && trialStatus.started) {
     return res.status(403).json({ error: "Premium trial has expired." });
   }
 
   const { targets, message } = req.body;
-  const queued = await connections.queueConnections(linkedInProfile.id, targets, message);
+  const queued = await connections.queueConnections(req.auth.userId, targets, message);
   res.json({ success: true, queued: queued.length });
 });
 
-app.get('/api/connections/queue', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const settings = await db.getUserSettings(linkedInProfile.id);
+app.get('/api/connections/queue', auth.requireAuth, async (req, res) => {
+  const settings = await db.getUserSettings(req.auth.userId);
   res.json(settings.connectionQueue || []);
 });
 
-app.get('/api/posts', async (req, res) => {
+app.get('/api/posts', auth.requireAuth, async (req, res) => {
   let posts = await db.getPosts();
-  posts = posts.filter(p => !p.userId || p.userId === linkedInProfile.id);
+  posts = posts.filter(p => p.userId === req.auth.userId);
   
   const activePosts = [];
   for (const post of posts) {
@@ -214,8 +221,10 @@ app.get('/api/posts', async (req, res) => {
   res.json(activePosts.sort((a, b) => b.id - a.id));
 });
 
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', auth.requireAuth, async (req, res) => {
   const { topic, context, size, tone, frequency } = req.body;
+  const postCount = parseInt(req.body.count, 10) || 1;
+  const ownerId = req.auth.userId;
 
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
     console.log("[AI] No GEMINI_API_KEY found. Falling back to robust mock generation engine.");
@@ -260,6 +269,7 @@ app.post('/api/posts', async (req, res) => {
 
       const newPost = {
         id: Date.now() + i,
+        userId: ownerId,
         topic,
         size,
         tone,
@@ -290,6 +300,7 @@ app.post('/api/posts', async (req, res) => {
       }
       return {
         id: Date.now() + idx,
+        userId: ownerId,
         topic, size, tone,
         content,
         status: 'draft',
@@ -305,16 +316,29 @@ app.post('/api/posts', async (req, res) => {
   }
 });
 
-const { publishToLinkedIn } = require('./linkedinService');
+async function assertPostOwner(req, res, id) {
+  const post = await db.getPostById(id);
+  if (!post) {
+    res.status(404).json({ error: 'Post not found' });
+    return null;
+  }
+  if (post.userId && post.userId !== req.auth.userId) {
+    res.status(403).json({ error: 'Forbidden' });
+    return null;
+  }
+  return post;
+}
 
-app.put('/api/posts/:id/approve', async (req, res) => {
+app.put('/api/posts/:id/approve', auth.requireAuth, async (req, res) => {
   const { id } = req.params;
+  if (!(await assertPostOwner(req, res, id))) return;
   const scheduledTime = req.body.scheduledTime ? new Date(req.body.scheduledTime) : new Date(Date.now() + 2 * 60 * 60 * 1000);
 
   const updatedPost = await db.updatePost(id, {
     status: 'approved',
-    content: req.body.content || undefined, // keep existing if undefined
-    scheduledTime: scheduledTime.toISOString() // Firestore handles ISO strings or Dates better, let's just save ISO string
+    userId: req.auth.userId,
+    content: req.body.content || undefined,
+    scheduledTime: scheduledTime.toISOString()
   });
 
   if (updatedPost) {
@@ -324,8 +348,9 @@ app.put('/api/posts/:id/approve', async (req, res) => {
   }
 });
 
-app.put('/api/posts/:id/cancel', async (req, res) => {
+app.put('/api/posts/:id/cancel', auth.requireAuth, async (req, res) => {
   const { id } = req.params;
+  if (!(await assertPostOwner(req, res, id))) return;
   const updatedPost = await db.updatePost(id, {
     status: 'draft',
     scheduledTime: null
@@ -338,9 +363,9 @@ app.put('/api/posts/:id/cancel', async (req, res) => {
   }
 });
 
-app.delete('/api/posts/:id', async (req, res) => {
+app.delete('/api/posts/:id', auth.requireAuth, async (req, res) => {
   const { id } = req.params;
-  console.warn(`[WARNING] Client requested DELETION of post ${id}!`);
+  if (!(await assertPostOwner(req, res, id))) return;
   await db.deletePost(id);
   res.json({ success: true });
 });
@@ -372,8 +397,8 @@ app.post('/api/track', async (req, res) => {
       label: label ? String(label).slice(0, 200) : null,
       metadata: metadata && typeof metadata === 'object' ? metadata : {},
       sessionId: sessionId ? String(sessionId).slice(0, 120) : null,
-      userId: userId ? String(userId).slice(0, 200) : (linkedInProfile?.id || null),
-      userName: userName ? String(userName).slice(0, 200) : (linkedInProfile?.name || null),
+      userId: userId ? String(userId).slice(0, 200) : (req.auth?.userId || null),
+      userName: userName ? String(userName).slice(0, 200) : (req.auth?.profile?.name || null),
       ...meta,
     });
     res.json({ ok: true, id: doc.id });

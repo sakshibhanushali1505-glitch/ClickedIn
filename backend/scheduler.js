@@ -7,7 +7,7 @@ function getRandomJitterMs(maxMinutes) {
   return minutes * 60 * 1000; 
 }
 
-function initScheduler(getToken, getUserId) {
+function initScheduler() {
   console.log("Scheduler initialized. Checking for scheduled posts every minute...");
   
   // Check every minute if any post is due
@@ -21,13 +21,14 @@ function initScheduler(getToken, getUserId) {
     for (const post of duePosts) {
       // Mark as 'publishing' so we don't pick it up again on the next minute tick
       await db.updatePost(post.id, { status: 'publishing' });
-      
-      const token = getToken();
-      const userId = getUserId();
+
+      const userId = post.userId;
+      const user = userId ? await db.getUserSettings(userId) : null;
+      const token = user?.accessToken;
       
       if (token && userId) {
         const jitterMs = getRandomJitterMs(2);
-        console.log(`[Scheduler] Post ${post.id} is due. Executing auto-publish.`);
+        console.log(`[Scheduler] Post ${post.id} is due for user ${userId}. Executing auto-publish.`);
         
         setTimeout(async () => {
           try {
@@ -43,7 +44,7 @@ function initScheduler(getToken, getUserId) {
           }
         }, jitterMs);
       } else {
-        console.log(`[Notice] Scheduled post ${post.id} time elapsed. Missing token. Marking as failed.`);
+        console.log(`[Notice] Scheduled post ${post.id} time elapsed. Missing per-user token. Marking as failed.`);
         await db.updatePost(post.id, { status: 'failed' });
       }
     }
