@@ -4,6 +4,8 @@ let db = null;
 let useFirestore = false;
 let memoryPosts = []; // Fallback
 let memoryUsers = {}; // Fallback for user settings
+let memoryActivity = []; // Fallback visitor / activity events
+let memorySessions = {}; // Fallback auth sessions { [id]: session }
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasCredentials = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -166,4 +168,188 @@ async function getAllUsersWithSettings() {
   }
 }
 
-module.exports = { getPosts, savePost, savePosts, getPostById, updatePost, deletePost, getUserSettings, saveUserSettings, getAllUsersWithSettings };
+function pickRequestMeta(req) {
+  const xf = req.headers['x-forwarded-for'];
+  const ip = (typeof xf === 'string' ? xf.split(',')[0].trim() : '') ||
+    req.headers['x-real-ip'] ||
+    req.socket?.remoteAddress ||
+    '';
+  return {
+    ip: String(ip),
+    userAgent: String(req.headers['user-agent'] || ''),
+  };
+}
+
+async function logActivity(event) {
+  const doc = {
+    id: event.id || `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    event: event.event || 'page_view',
+    path: event.path || '/',
+    label: event.label || null,
+    metadata: event.metadata || {},
+    sessionId: event.sessionId || null,
+    userId: event.userId || null,
+    userName: event.userName || null,
+    ip: event.ip || '',
+    userAgent: event.userAgent || '',
+    createdAt: event.createdAt || new Date().toISOString(),
+  };
+
+  if (useFirestore) {
+    try {
+      await db.collection('activity_events').doc(doc.id).set(doc);
+    } catch (err) {
+      console.error('Firestore activity write error:', err);
+      memoryActivity.unshift(doc);
+      if (memoryActivity.length > 5000) memoryActivity.length = 5000;
+    }
+  } else {
+    memoryActivity.unshift(doc);
+    if (memoryActivity.length > 5000) memoryActivity.length = 5000;
+  }
+  return doc;
+}
+
+async function listActivity({ limit = 100, sinceIso = null } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  if (useFirestore) {
+    try {
+      let q = db.collection('activity_events').orderBy('createdAt', 'desc').limit(lim);
+      if (sinceIso) {
+        q = db.collection('activity_events')
+          .where('createdAt', '>=', sinceIso)
+          .orderBy('createdAt', 'desc')
+          .limit(lim);
+      }
+      const snapshot = await q.get();
+      return snapshot.docs.map((d) => d.data());
+    } catch (err) {
+      console.error('Firestore activity list error:', err);
+    }
+  }
+  let rows = [...memoryActivity];
+  if (sinceIso) rows = rows.filter((r) => r.createdAt >= sinceIso);
+  return rows.slice(0, lim);
+}
+
+async function getAdminDashboard() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let recent = [];
+  let last24h = [];
+
+  if (useFirestore) {
+    try {
+      const recentSnap = await db.collection('activity_events')
+        .orderBy('createdAt', 'desc')
+        .limit(40)
+        .get();
+      recent = recentSnap.docs.map((d) => d.data());
+
+      const daySnap = await db.collection('activity_events')
+        .where('createdAt', '>=', since)
+        .orderBy('createdAt', 'desc')
+        .limit(2000)
+        .get();
+      last24h = daySnap.docs.map((d) => d.data());
+    } catch (err) {
+      console.error('Firestore admin dashboard error:', err);
+      recent = memoryActivity.slice(0, 40);
+      last24h = memoryActivity.filter((r) => r.createdAt >= since);
+    }
+  } else {
+    recent = memoryActivity.slice(0, 40);
+    last24h = memoryActivity.filter((r) => r.createdAt >= since);
+  }
+
+  const uniqueSessions = new Set(last24h.map((e) => e.sessionId).filter(Boolean));
+  const pageViewsLast24h = last24h.filter((e) => e.event === 'page_view').length;
+  const loginsLast24h = last24h.filter((e) => e.event === 'login').length;
+  const users = await getAllUsersWithSettings();
+
+  // Top paths last 24h
+  const pathCounts = {};
+  for (const e of last24h.filter((x) => x.event === 'page_view')) {
+    const p = e.path || '/';
+    pathCounts[p] = (pathCounts[p] || 0) + 1;
+  }
+  const topPaths = Object.entries(pathCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([path, count]) => ({ path, count }));
+
+  return {
+    stats: {
+      uniqueVisitorsLast24h: uniqueSessions.size,
+      pageViewsLast24h,
+      activityLast24h: last24h.length,
+      loginsLast24h,
+      registeredUsers: users.length,
+      topPaths,
+    },
+    recentActivity: recent,
+    users: users.map((u) => ({
+      id: u.id,
+      name: u.linkedInProfile?.name || u.name || null,
+      pictureUrl: u.linkedInProfile?.pictureUrl || null,
+      fullyAutomated: !!u.fullyAutomated,
+      hasToken: !!u.accessToken,
+    })),
+  };
+}
+
+async function saveSession(session) {
+  if (useFirestore) {
+    try {
+      await db.collection('sessions').doc(session.id).set(session);
+      return session;
+    } catch (err) {
+      console.error('Firestore save session error:', err);
+    }
+  }
+  memorySessions[session.id] = session;
+  return session;
+}
+
+async function getSession(sessionId) {
+  if (!sessionId) return null;
+  if (useFirestore) {
+    try {
+      const doc = await db.collection('sessions').doc(String(sessionId)).get();
+      return doc.exists ? doc.data() : null;
+    } catch (err) {
+      console.error('Firestore get session error:', err);
+    }
+  }
+  return memorySessions[sessionId] || null;
+}
+
+async function deleteSession(sessionId) {
+  if (!sessionId) return;
+  if (useFirestore) {
+    try {
+      await db.collection('sessions').doc(String(sessionId)).delete();
+    } catch (err) {
+      console.error('Firestore delete session error:', err);
+    }
+  }
+  delete memorySessions[sessionId];
+}
+
+module.exports = {
+  getPosts,
+  savePost,
+  savePosts,
+  getPostById,
+  updatePost,
+  deletePost,
+  getUserSettings,
+  saveUserSettings,
+  getAllUsersWithSettings,
+  pickRequestMeta,
+  logActivity,
+  listActivity,
+  getAdminDashboard,
+  saveSession,
+  getSession,
+  deleteSession,
+};

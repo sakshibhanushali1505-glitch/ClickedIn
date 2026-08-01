@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Sparkles, ShieldCheck, FileText, Plus, Zap, Clock, Lock, ClipboardCheck, Gauge, Search, Briefcase, Wind, Star, Calendar, ChevronDown, AlignLeft, BookOpen, Send, Trash2, LogOut, User, Layers, Save, CheckCircle, Users, Play, ShieldAlert, Check, X } from 'lucide-react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
+import ActivityTracker from './components/ActivityTracker';
+import AdminPanel from './pages/AdminPanel';
+import { trackActivity } from './lib/activity';
+
+// Send session cookie on every API call (multi-user auth)
+axios.defaults.withCredentials = true;
 
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -102,16 +108,11 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const [size, setSize] = useState('Medium');
   const [tone, setTone] = useState('Professional');
   const [postCount, setPostCount] = useState(1);
+  const [hoursGap, setHoursGap] = useState(4);
+  const [minutesGap, setMinutesGap] = useState(0);
   const [fullyAutomated, setFullyAutomated] = useState(false);
   const [automatedPostCount, setAutomatedPostCount] = useState(1);
-  const [automatedSize, setAutomatedSize] = useState('Medium');
-  const [automatedTone, setAutomatedTone] = useState('Professional');
-  
-  const getCurrentTimeStr = () => {
-    const now = new Date();
-    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  };
-  const [automatedStartTime, setAutomatedStartTime] = useState(getCurrentTimeStr());
+  const [automatedStartTime, setAutomatedStartTime] = useState("10:00");
   const [automatedEndTime, setAutomatedEndTime] = useState("21:00");
   
   // Connections tab state
@@ -143,18 +144,8 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         if (res.data.context) setContext(res.data.context);
         if (res.data.fullyAutomated !== undefined) setFullyAutomated(res.data.fullyAutomated);
         if (res.data.automatedPostCount !== undefined) setAutomatedPostCount(res.data.automatedPostCount);
-        if (res.data.automatedSize) setAutomatedSize(res.data.automatedSize);
-        if (res.data.automatedTone) setAutomatedTone(res.data.automatedTone);
-        // User requested that start time always syncs to current time on refresh, 
-        // which means the saved end time might end up being BEFORE the current time!
-        const currentStartTime = getCurrentTimeStr();
-        if (res.data.automatedEndTime) {
-          if (res.data.automatedEndTime <= currentStartTime) {
-            setAutomatedEndTime("23:59"); // Push it to end of day so it's valid
-          } else {
-            setAutomatedEndTime(res.data.automatedEndTime);
-          }
-        }
+        if (res.data.automatedStartTime) setAutomatedStartTime(res.data.automatedStartTime);
+        if (res.data.automatedEndTime) setAutomatedEndTime(res.data.automatedEndTime);
       }
     } catch (err) {
       if (err.response?.status === 401) {
@@ -194,7 +185,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
       const activePosts = res.data.filter(p => {
         if (p.status === 'published' || p.status === 'posted') return false;
         return true;
-      }).sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+      });
       setQueue(activePosts);
     } catch (err) {
       console.error("Error fetching queue", err);
@@ -202,44 +193,37 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   };
 
   const handleSaveProfile = async () => {
-    if (fullyAutomated && automatedEndTime <= automatedStartTime) {
-      toast.error("End time must be later than start time.");
-      return;
-    }
-    
     localStorage.setItem('userWorkHistory', context);
-    const toastId = toast.loading("Saving settings...");
     try {
-      await axios.post('/api/user/settings', { 
-        context, 
-        fullyAutomated, 
-        automatedPostCount, 
-        automatedStartTime, 
-        automatedEndTime,
-        automatedSize,
-        automatedTone,
-        timezoneOffset: new Date().getTimezoneOffset()
-      });
-      
-      if (fullyAutomated) {
-        toast.loading("Generating today's automated posts...", { id: toastId });
-        await axios.post('/api/user/automation/run');
-        toast.success("Settings saved & today's posts generated seamlessly in the background!", { id: toastId });
-        setActiveTab('schedule');
-        fetchQueue();
-      } else {
-        toast.success("Profile experience & settings saved successfully!", { id: toastId });
-      }
+      await axios.post('/api/user/settings', { context, fullyAutomated, automatedPostCount, automatedStartTime, automatedEndTime });
+      toast.success("Profile experience & settings saved successfully!");
     } catch (err) {
       if (err.response?.status === 401) {
         window.location.reload();
         return;
       }
-      toast.error("Failed to save settings or run automation.", { id: toastId });
+      toast.error("Failed to save settings to server.");
     }
   };
 
-
+  const handleRunAutomation = async () => {
+    const toastId = toast.loading("Generating today's automated posts...");
+    try {
+      // Save latest settings first
+      await axios.post('/api/user/settings', { context, fullyAutomated, automatedPostCount, automatedStartTime, automatedEndTime });
+      
+      await axios.post('/api/user/automation/run');
+      toast.success("Automated posts generated and scheduled successfully!", { id: toastId });
+      setActiveTab('schedule');
+      fetchQueue();
+    } catch (err) {
+      if (err.response?.status === 401) {
+        window.location.reload();
+        return;
+      }
+      toast.error("Failed to run automation.", { id: toastId });
+    }
+  };
 
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
@@ -257,10 +241,10 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         tone,
         count: postCount,
         baseTime: new Date().toISOString(),
-        timezoneOffset: new Date().getTimezoneOffset()
+        hoursGap,
+        minutesGap
       });
       toast.success(`${postCount} post(s) generated successfully!`, { id: toastId });
-      setTopic(''); // Clear the input text so it is not visible after posting/generating
       setActiveTab('schedule');
       fetchQueue();
     } catch (err) {
@@ -328,16 +312,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     
     const baseTimeObj = new Date(startTimeStr);
     
-    let intervalMs = 0;
-    if (drafts.length > 1) {
-      const endOfDay = new Date(baseTimeObj.getFullYear(), baseTimeObj.getMonth(), baseTimeObj.getDate(), 23, 59, 59).getTime();
-      intervalMs = Math.max(0, (endOfDay - baseTimeObj.getTime()) / (drafts.length - 1));
-      if (intervalMs > 4 * 60 * 60 * 1000) intervalMs = 4 * 60 * 60 * 1000;
-    }
-    
     try {
       await Promise.all(drafts.map((post, index) => {
-        const scheduledTimeObj = new Date(baseTimeObj.getTime() + (index * intervalMs));
+        const scheduledTimeObj = new Date(baseTimeObj.getTime() + (index * ((hoursGap * 60) + minutesGap) * 60 * 1000));
         return axios.put(`/api/posts/${post.id}/approve`, {
           content: document.getElementById(`content-${post.id}`).value,
           scheduledTime: scheduledTimeObj.toISOString()
@@ -417,12 +394,12 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                     </span>
                   )}
                 </div>
+                
                 <textarea 
-                  className={`w-full h-36 bg-black/20 border border-white/5 rounded-xl p-4 text-[15px] focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/10 mb-4 resize-none text-slate-300 font-medium leading-relaxed transition-all ${post.status !== 'draft' ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  className="w-full h-36 bg-black/20 border border-white/5 rounded-xl p-4 text-[15px] focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/10 mb-4 resize-none text-slate-300 font-medium leading-relaxed transition-all"
                   defaultValue={post.content}
                   id={`content-${post.id}`}
                   spellCheck="false"
-                  readOnly={post.status !== 'draft'}
                 />
                 
                 <div className="flex justify-end items-center space-x-3">
@@ -774,6 +751,27 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                         className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto border-white/10"
                       />
                     </div>
+                    
+                    <div className="flex space-x-2">
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Hours Gap</label>
+                        <input 
+                          type="number" min="0" max="72"
+                          className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
+                          value={hoursGap.toString()}
+                          onChange={(e) => setHoursGap(Number(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1 ml-1 uppercase font-bold tracking-wider">Mins Gap</label>
+                        <input 
+                          type="number" min="0" max="59"
+                          className="w-20 glass-input rounded-xl px-3 py-2.5 text-[14px] text-white text-center border-white/10"
+                          value={minutesGap.toString()}
+                          onChange={(e) => setMinutesGap(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
 
                     <button 
                       onClick={handleApproveAll}
@@ -948,41 +946,20 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                         />
                       </div>
                     </div>
-                    
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col space-y-2">
-                        <div className="text-[14px] font-bold text-slate-300">Post Length</div>
-                        <select 
-                          className="glass-input p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                          value={automatedSize}
-                          onChange={(e) => setAutomatedSize(e.target.value)}
-                        >
-                          <option value="Short" className="bg-slate-900">Short (1-2 paragraphs)</option>
-                          <option value="Medium" className="bg-slate-900">Medium (3-4 paragraphs)</option>
-                          <option value="Long" className="bg-slate-900">Long (5-7 paragraphs)</option>
-                        </select>
-                      </div>
-                      
-                      <div className="flex flex-col space-y-2">
-                        <div className="text-[14px] font-bold text-slate-300">Tone</div>
-                        <select 
-                          className="glass-input p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                          value={automatedTone}
-                          onChange={(e) => setAutomatedTone(e.target.value)}
-                        >
-                          <option value="Professional" className="bg-slate-900">Professional</option>
-                          <option value="Casual" className="bg-slate-900">Casual / Conversational</option>
-                          <option value="Thought Leadership" className="bg-slate-900">Thought Leadership</option>
-                        </select>
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>
 
               <div className="pt-4 flex justify-end space-x-4">
-
+                {fullyAutomated && (
+                  <button 
+                    onClick={handleRunAutomation}
+                    className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-3.5 rounded-2xl transition-all hover:scale-105 border border-white/10"
+                  >
+                    <Sparkles size={18} className="text-cyan-400" />
+                    <span>Generate Today's Posts Now</span>
+                  </button>
+                )}
                 <button 
                   onClick={handleSaveProfile}
                   className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 text-white font-bold px-8 py-3.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all hover:scale-105"
@@ -1102,53 +1079,55 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
-
-  // Configure axios to always send the user session ID
-  useEffect(() => {
-    axios.interceptors.request.use(config => {
-      const userId = localStorage.getItem('clickedin_user_id');
-      if (userId) {
-        config.headers['x-user-id'] = userId;
-      }
-      return config;
-    });
-  }, []);
+  const [authReady, setAuthReady] = useState(false);
+  const isAdminRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const userId = urlParams.get('userId');
-    if (urlParams.get('success') === 'linkedin_connected' && userId) {
-      localStorage.setItem('clickedin_user_id', userId);
-      setIsAuthenticated(true);
+    const justConnected = urlParams.get('success') === 'linkedin_connected';
+    if (justConnected) {
+      trackActivity('login', { label: 'linkedin_connected' });
       window.history.replaceState({}, document.title, window.location.pathname);
     }
     checkAuthStatus();
   }, []);
 
   const checkAuthStatus = async () => {
-    const userId = localStorage.getItem('clickedin_user_id');
-    if (!userId) return; // Don't bother pinging backend if we know we are logged out
-
     try {
-      const res = await axios.get('/api/auth/status');
+      const res = await axios.get('/api/auth/status', { withCredentials: true });
       if (res.data.connected) {
         setIsAuthenticated(true);
         setUserProfile(res.data.profile);
+      } else {
+        setIsAuthenticated(false);
+        setUserProfile(null);
       }
     } catch (err) {
       console.error("Auth status error", err);
+      setIsAuthenticated(false);
+      setUserProfile(null);
+    } finally {
+      setAuthReady(true);
     }
   };
 
   const handleLogin = (profile) => {
     setIsAuthenticated(true);
     setUserProfile(profile);
+    trackActivity('login', {
+      userId: profile?.id,
+      userName: profile?.name,
+      label: 'client_login',
+    });
   };
 
   const handleLogout = async () => {
     try {
       await axios.post('/api/auth/logout');
-      localStorage.removeItem('clickedin_user_id');
+      trackActivity('logout', {
+        userId: userProfile?.id,
+        userName: userProfile?.name,
+      });
       setIsAuthenticated(false);
       setUserProfile(null);
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -1157,10 +1136,29 @@ export default function App() {
     }
   };
 
+  if (isAdminRoute) {
+    return (
+      <>
+        <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+        <ActivityTracker userProfile={userProfile} />
+        <AdminPanel />
+      </>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#07080A] text-slate-400 text-sm">
+        Restoring your session…
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <>
         <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+        <ActivityTracker userProfile={null} />
         <LoginPage onLogin={handleLogin} />
       </>
     );
@@ -1169,6 +1167,7 @@ export default function App() {
   return (
     <>
       <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
+      <ActivityTracker userProfile={userProfile} />
       <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />
     </>
   );
