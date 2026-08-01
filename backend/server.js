@@ -12,17 +12,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Auth state (still in-memory for MVP, can be moved to Firestore later)
-let userAccessToken = null;
-let linkedInProfile = null;
+// Removed global auth state variables to support Multi-Tenant Architecture
 
 // Determine environment URLs
 const isProd = process.env.NODE_ENV === 'production';
-const FRONTEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5173';
-const BACKEND_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5000';
+const APP_URL = isProd ? 'https://clickedin.hookstep.in' : 'http://localhost:5000';
+const FRONTEND_URL = isProd ? APP_URL : 'http://localhost:5173';
+const BACKEND_URL = APP_URL;
 
 // Start the scheduler
-initScheduler(() => userAccessToken, () => linkedInProfile?.id);
+initScheduler();
 
 // LinkedIn OAuth Routes
 app.get('/api/auth/linkedin', (req, res) => {
@@ -54,9 +53,9 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
 
   // Fallback to Demo Mode if real credentials aren't provided yet
   if (!clientId || !clientSecret || clientId === 'mock_client_id') {
-    userAccessToken = 'mock_oauth_token_' + code;
-    linkedInProfile = { name: "Demo User", id: "urn:li:person:12345" };
-    return res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
+    const demoProfile = { name: "Demo User", id: "urn:li:person:12345" };
+    await db.saveUserSettings(demoProfile.id, { accessToken: 'mock_oauth_token_' + code, linkedInProfile: demoProfile });
+    return res.redirect(`${FRONTEND_URL}/?success=linkedin_connected&userId=${demoProfile.id}`);
   }
 
   try {
@@ -91,100 +90,146 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
       pictureUrl: profileResponse.data.picture
     };
 
-    // Redirect back to dashboard with success
-    res.redirect(`${FRONTEND_URL}/?success=linkedin_connected`);
+    // Persist to DB for Cloud environment
+    await db.saveUserSettings(linkedInProfile.id, { 
+      accessToken: userAccessToken, 
+      linkedInProfile 
+    });
+
+    // Redirect back to dashboard with success, passing the unique user ID
+    res.redirect(`${FRONTEND_URL}/?success=linkedin_connected&userId=${linkedInProfile.id}`);
   } catch (err) {
     console.error("Token exchange failed", err.response?.data || err.message);
     res.redirect(`${FRONTEND_URL}/?error=token_failed`);
   }
 });
 
-app.get('/api/auth/demo', (req, res) => {
-  userAccessToken = "demo_access_token";
-  linkedInProfile = {
+// Multi-tenant Auth Middleware
+async function authMiddleware(req, res, next) {
+  const userId = req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized - No user ID provided" });
+  }
+
+  const settings = await db.getUserSettings(userId);
+  if (!settings || !settings.linkedInProfile) {
+    return res.status(401).json({ error: "Unauthorized - Invalid user ID or session expired" });
+  }
+
+  // Attach the strictly-scoped user object to the request
+  req.user = settings.linkedInProfile;
+  req.accessToken = settings.accessToken;
+  next();
+}
+
+app.get('/api/auth/demo', async (req, res) => {
+  const demoProfile = {
     name: "Sakshi Bhanushali",
     id: "sakshi_1505",
-    pictureUrl: linkedInProfile?.pictureUrl || ""
+    pictureUrl: ""
   };
-  res.redirect(`/?success=linkedin_connected`);
+  await db.saveUserSettings(demoProfile.id, { accessToken: 'demo_access_token', linkedInProfile: demoProfile });
+  res.redirect(`/?success=linkedin_connected&userId=${demoProfile.id}`);
 });
 
-app.get('/api/auth/status', (req, res) => {
-  if (userAccessToken) {
-    res.json({ connected: true, profile: linkedInProfile });
-  } else {
-    res.json({ connected: false });
-  }
+app.get('/api/auth/status', authMiddleware, (req, res) => {
+  res.json({ connected: true, profile: req.user });
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  userAccessToken = null;
-  linkedInProfile = null;
   res.json({ success: true });
 });
 
-app.get('/api/user/settings', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const settings = await db.getUserSettings(linkedInProfile.id);
+app.get('/api/user/profile', authMiddleware, async (req, res) => {
+  res.json(req.user);
+});
+
+app.get('/api/user/settings', authMiddleware, async (req, res) => {
+  const settings = await db.getUserSettings(req.user.id);
+  
+  // Catch-up mechanism: If they missed the 1:00 AM cron job (e.g. computer was asleep), generate them now!
+  if (settings && settings.fullyAutomated) {
+    const allPosts = await db.getPosts();
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfDay = startOfDay + (24 * 60 * 60 * 1000);
+    
+    const hasPostsToday = allPosts.some(p => 
+      p.userId === req.user.id && 
+      p.topic && p.topic.startsWith("Automated") && 
+      p.scheduledTime && 
+      new Date(p.scheduledTime).getTime() >= startOfDay && 
+      new Date(p.scheduledTime).getTime() < endOfDay
+    );
+    
+    if (!hasPostsToday) {
+      console.log(`[Catch-up] No automated posts found for today for ${req.user.id}. The 1:00 AM job was likely missed. Triggering background generation...`);
+      // Run it asynchronously so we don't block the frontend load!
+      runDailyAutomation(req.user.id).catch(err => console.error("Catch-up generation failed:", err));
+    }
+  }
+  
   res.json(settings);
 });
 
-app.post('/api/user/settings', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const settings = req.body;
-  const updated = await db.saveUserSettings(linkedInProfile.id, settings);
+  const updated = await db.saveUserSettings(req.user.id, settings);
   res.json(updated);
 });
 
-app.post('/api/user/automation/run', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
+app.post('/api/user/automation/run', authMiddleware, async (req, res) => {
   try {
-    const success = await runDailyAutomation(linkedInProfile.id);
+    const success = await runDailyAutomation(req.user.id);
     if (!success) {
       return res.status(500).json({ error: "Failed to run automation. The AI generation may be experiencing high demand." });
     }
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Failed to run automation." });
+    res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/cron/daily', async (req, res) => {
+  // This endpoint will be hit by Google Cloud Scheduler
+  console.log("[Cron] Triggering daily automation for all users...");
+  // Run async so it responds to Cloud Scheduler immediately
+  runDailyAutomation().catch(err => console.error("Cron automation failed:", err));
+  res.json({ success: true, message: "Automation triggered" });
 });
 
 const connections = require('./connections');
 
-app.get('/api/connections/trial', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+app.get('/api/connections/trial', authMiddleware, async (req, res) => {
+  const trialStatus = await connections.getTrialStatus(req.user.id);
   res.json(trialStatus);
 });
 
-app.post('/api/connections/trial/start', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.startTrial(linkedInProfile.id);
+app.post('/api/connections/trial/start', authMiddleware, async (req, res) => {
+  const trialStatus = await connections.startTrial(req.user.id);
   res.json(trialStatus);
 });
 
-app.post('/api/connections/queue', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const trialStatus = await connections.getTrialStatus(linkedInProfile.id);
+app.post('/api/connections/queue', authMiddleware, async (req, res) => {
+  const trialStatus = await connections.getTrialStatus(req.user.id);
   
   if (!trialStatus.isActive && trialStatus.started) {
     return res.status(403).json({ error: "Premium trial has expired." });
   }
 
   const { targets, message } = req.body;
-  const queued = await connections.queueConnections(linkedInProfile.id, targets, message);
+  const queued = await connections.queueConnections(req.user.id, targets, message);
   res.json({ success: true, queued: queued.length });
 });
 
-app.get('/api/connections/queue', async (req, res) => {
-  if (!linkedInProfile) return res.status(401).json({ error: "Unauthorized" });
-  const settings = await db.getUserSettings(linkedInProfile.id);
+app.get('/api/connections/queue', authMiddleware, async (req, res) => {
+  const settings = await db.getUserSettings(req.user.id);
   res.json(settings.connectionQueue || []);
 });
 
-app.get('/api/posts', async (req, res) => {
+app.get('/api/posts', authMiddleware, async (req, res) => {
   let posts = await db.getPosts();
-  posts = posts.filter(p => !p.userId || p.userId === linkedInProfile.id);
+  posts = posts.filter(p => !p.userId || p.userId === req.user.id);
   
   const activePosts = [];
   for (const post of posts) {
@@ -201,7 +246,7 @@ app.get('/api/posts', async (req, res) => {
   res.json(activePosts.sort((a, b) => b.id - a.id));
 });
 
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', authMiddleware, async (req, res) => {
   const { topic, context, size, tone, frequency } = req.body;
 
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
@@ -253,7 +298,8 @@ app.post('/api/posts', async (req, res) => {
         frequency,
         content: generatedContent,
         status: 'draft',
-        scheduledTime: null
+        scheduledTime: null,
+        userId: req.user.id
       };
 
       await db.savePost(newPost);
@@ -267,20 +313,35 @@ app.post('/api/posts', async (req, res) => {
     const contents = await generatePostContent(topic, context, size, tone, postCount);
     
     const baseTime = req.body.baseTime ? new Date(req.body.baseTime) : null;
-    const hoursGap = parseInt(req.body.hoursGap) || 0;
-    const minutesGap = parseInt(req.body.minutesGap) || 0;
+    const tzOffsetMs = (req.body.timezoneOffset !== undefined && req.body.timezoneOffset !== null ? parseInt(req.body.timezoneOffset) : -330) * 60 * 1000;
+    
+    // Automatically distribute posts evenly within the rest of today
+    let intervalMs = 0;
+    if (baseTime && postCount > 1) {
+      const userLocalBase = new Date(baseTime.getTime() - tzOffsetMs);
+      const y = userLocalBase.getUTCFullYear();
+      const m = userLocalBase.getUTCMonth();
+      const d = userLocalBase.getUTCDate();
+      
+      const endOfDayUtc = Date.UTC(y, m, d, 23, 59, 59) + tzOffsetMs;
+      
+      intervalMs = Math.max(0, (endOfDayUtc - baseTime.getTime()) / (postCount - 1));
+      // Max gap of 4 hours so it doesn't look weird if they generate early in the morning
+      if (intervalMs > 4 * 60 * 60 * 1000) intervalMs = 4 * 60 * 60 * 1000;
+    }
 
     const newPosts = contents.map((content, idx) => {
       let scheduledTime = null;
       if (baseTime) {
-        scheduledTime = new Date(baseTime.getTime() + (idx * ((hoursGap * 60) + minutesGap) * 60 * 1000));
+        scheduledTime = new Date(baseTime.getTime() + (idx * intervalMs));
       }
       return {
         id: Date.now() + idx,
         topic, size, tone,
         content,
         status: 'draft',
-        scheduledTime
+        scheduledTime,
+        userId: req.user.id
       };
     });
 
@@ -294,7 +355,7 @@ app.post('/api/posts', async (req, res) => {
 
 const { publishToLinkedIn } = require('./linkedinService');
 
-app.put('/api/posts/:id/approve', async (req, res) => {
+app.put('/api/posts/:id/approve', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const scheduledTime = req.body.scheduledTime ? new Date(req.body.scheduledTime) : new Date(Date.now() + 2 * 60 * 60 * 1000);
 
@@ -311,7 +372,7 @@ app.put('/api/posts/:id/approve', async (req, res) => {
   }
 });
 
-app.put('/api/posts/:id/cancel', async (req, res) => {
+app.put('/api/posts/:id/cancel', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const updatedPost = await db.updatePost(id, {
     status: 'draft',
@@ -325,7 +386,7 @@ app.put('/api/posts/:id/cancel', async (req, res) => {
   }
 });
 
-app.delete('/api/posts/:id', async (req, res) => {
+app.delete('/api/posts/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   console.warn(`[WARNING] Client requested DELETION of post ${id}!`);
   await db.deletePost(id);

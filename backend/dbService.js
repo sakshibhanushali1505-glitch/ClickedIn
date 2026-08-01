@@ -8,16 +8,64 @@ let memoryUsers = {}; // Fallback for user settings
 const isProduction = process.env.NODE_ENV === 'production';
 const hasCredentials = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
+const fs = require('fs');
+const path = require('path');
+const localDbPath = path.join(__dirname, 'local_db.json');
+
+function loadLocalDb() {
+  if (fs.existsSync(localDbPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(localDbPath, 'utf8'));
+      memoryPosts = data.memoryPosts || [];
+      memoryUsers = data.memoryUsers || {};
+    } catch (e) {
+      console.warn("Failed to load local DB, starting fresh.");
+    }
+  }
+}
+
+function saveLocalDb() {
+  fs.writeFileSync(localDbPath, JSON.stringify({ memoryPosts, memoryUsers }, null, 2), 'utf8');
+}
+
 if (isProduction || hasCredentials) {
   try {
     db = new Firestore({ projectId: 'jr-consulting-co' });
     useFirestore = true;
     console.log("Firestore initialized successfully.");
+    
+    // Auto-migration on startup
+    setTimeout(async () => {
+      try {
+        const testDocs = await db.collection('users').limit(1).get();
+        if (testDocs.empty && fs.existsSync(localDbPath)) {
+          console.log("[Auto-Migrate] Firestore is empty. Migrating from local_db.json...");
+          const data = JSON.parse(fs.readFileSync(localDbPath, 'utf8'));
+          
+          if (data.memoryPosts) {
+            for (const p of data.memoryPosts) {
+              await db.collection('posts').doc(p.id.toString()).set(p);
+            }
+          }
+          if (data.memoryUsers) {
+            for (const [uid, settings] of Object.entries(data.memoryUsers)) {
+              await db.collection('users').doc(uid.toString()).set(settings, { merge: true });
+            }
+          }
+          console.log("[Auto-Migrate] Migration complete!");
+        }
+      } catch (err) {
+        console.error("Auto-migration failed:", err);
+      }
+    }, 2000);
+    
   } catch (err) {
-    console.warn("Could not initialize Firestore, falling back to in-memory storage.", err);
+    console.warn("Could not initialize Firestore, falling back to local file storage.", err);
+    loadLocalDb();
   }
 } else {
-  console.log("Running locally without Google credentials. Falling back to in-memory storage.");
+  console.log("Running locally without Google credentials. Falling back to local file storage.");
+  loadLocalDb();
 }
 
 async function getPosts() {
@@ -42,6 +90,7 @@ async function savePost(post) {
     const idx = memoryPosts.findIndex(p => p.id === post.id);
     if (idx >= 0) memoryPosts[idx] = post;
     else memoryPosts.push(post);
+    saveLocalDb();
   }
 }
 
@@ -78,6 +127,7 @@ async function deletePost(id) {
     }
   }
   memoryPosts = memoryPosts.filter(p => p.id != id);
+  if (!useFirestore) saveLocalDb();
   return true;
 }
 
@@ -101,6 +151,7 @@ async function saveUserSettings(userId, settings) {
     }
   }
   memoryUsers[userId] = { ...memoryUsers[userId], ...settings };
+  if (!useFirestore) saveLocalDb();
   return memoryUsers[userId];
 }
 

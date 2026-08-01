@@ -22,8 +22,20 @@ function initScheduler(getToken, getUserId) {
       // Mark as 'publishing' so we don't pick it up again on the next minute tick
       await db.updatePost(post.id, { status: 'publishing' });
       
-      const token = getToken();
-      const userId = getUserId();
+      let token = getToken();
+      let userId = getUserId();
+      
+      // Cloud fallback: if memory is empty, fetch from database
+      if (!token || !userId) {
+        const users = await db.getAllUsersWithSettings();
+        if (users && users.length > 0) {
+          const mainUser = users[0];
+          if (mainUser.accessToken && mainUser.linkedInProfile) {
+            token = mainUser.accessToken;
+            userId = mainUser.linkedInProfile.id;
+          }
+        }
+      }
       
       if (token && userId) {
         const jitterMs = getRandomJitterMs(2);
@@ -77,16 +89,23 @@ async function runDailyAutomation(specificUserId = null) {
         const startTimeStr = user.automatedStartTime || "10:00";
         const endTimeStr = user.automatedEndTime || "21:00";
         
+        const topic = user.automatedTopic || "Industry Trends & Leadership";
+        const size = user.automatedSize || "Medium";
+        const tone = user.automatedTone || "Professional";
+        
         const [startHour, startMin] = startTimeStr.split(':').map(Number);
         const [endHour, endMin] = endTimeStr.split(':').map(Number);
         
-        const now = new Date();
-        let startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMin).getTime();
-        let endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endHour, endMin).getTime();
+        const tzOffsetMs = (user.timezoneOffset || 0) * 60 * 1000;
+        const nowUtc = Date.now();
+        const pseudoLocalNow = new Date(nowUtc - tzOffsetMs);
+        
+        let startMs = new Date(pseudoLocalNow.getFullYear(), pseudoLocalNow.getMonth(), pseudoLocalNow.getDate(), startHour, startMin).getTime() + tzOffsetMs;
+        let endMs = new Date(pseudoLocalNow.getFullYear(), pseudoLocalNow.getMonth(), pseudoLocalNow.getDate(), endHour, endMin).getTime() + tzOffsetMs;
         
         // If the start time is already in the past, adjust it to start 2 minutes from now
-        if (startMs < now.getTime()) {
-          startMs = now.getTime() + (2 * 60 * 1000); // Start 2 mins from now
+        if (startMs < nowUtc) {
+          startMs = nowUtc + (2 * 60 * 1000); // Start 2 mins from now
           // Ensure endMs is still after startMs
           if (endMs <= startMs) {
             endMs = startMs + (postCount * 30 * 60 * 1000); // Fallback: 30 mins between posts
@@ -98,8 +117,15 @@ async function runDailyAutomation(specificUserId = null) {
           intervalMs = Math.max(0, (endMs - startMs) / (postCount - 1));
         }
 
-        // Generate multiple posts
-        const contents = await generatePostContent("Industry Trends & Leadership", user.context, "Medium", "Professional", postCount);
+        // Delete existing scheduled posts for this user to prevent duplicates if they run it again manually
+        const allPosts = await db.getPosts();
+        const existingAutomated = allPosts.filter(p => p.userId === user.id && p.status === 'approved' && p.topic && p.topic.startsWith("Automated"));
+        for (const p of existingAutomated) {
+          await db.deletePost(p.id);
+        }
+
+        // Generate multiple posts using dynamic trends
+        const contents = await generatePostContent("AUTO_TRENDS", user.context, size, tone, postCount);
         
         if (contents && contents.length > 0) {
           for (let i = 0; i < contents.length; i++) {
@@ -108,9 +134,9 @@ async function runDailyAutomation(specificUserId = null) {
             const newPost = {
               id: Date.now() + i + Math.floor(Math.random() * 1000),
               userId: user.id,
-              topic: "Automated Industry Trends",
-              size: "Medium",
-              tone: "Professional",
+              topic: `Automated (Trending)`,
+              size: size,
+              tone: tone,
               frequency: "Daily",
               content: contents[i],
               status: 'approved',

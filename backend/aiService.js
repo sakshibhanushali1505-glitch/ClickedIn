@@ -13,7 +13,13 @@ async function generatePostContent(topic, context, size, tone, postCount = 1) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
-  let prompt = `Write ${postCount} highly engaging, distinct LinkedIn post(s) about "${topic}".\n`;
+  let prompt = '';
+  
+  if (topic === "AUTO_TRENDS") {
+    prompt += `Write ${postCount} highly engaging, distinct LinkedIn post(s). You must completely invent the core topic yourself based purely on current industry trends, recent news, and the author's professional context below. Pick a topic that is highly relevant right now and would perform exceptionally well on LinkedIn today.\n`;
+  } else {
+    prompt += `Write ${postCount} highly engaging, distinct LinkedIn post(s) about "${topic}".\n`;
+  }
 
   if (context && context.trim() !== '') {
     prompt += `\nThe author's professional context/background is: "${context}". Please weave this personal perspective and industry experience into the post organically. You may mention the author's professional title or role, but DO NOT repeatedly name-drop the author's company name. Mention the company name at most once, or preferably speak from the perspective of an insider without explicitly stating the company name at all.\n`;
@@ -29,10 +35,18 @@ CRITICAL RULE 1: DO NOT use the long em-dash character (—) or en-dash (–) an
 
 CRITICAL RULE 2: If the Tone is "Professional" or "Thought Leadership", you are STRICTLY FORBIDDEN from using ANY emojis anywhere in the response. No exceptions. If the Tone is "Casual", you MAY use emojis. The current Tone for this request is "${tone}".
 
+CRITICAL RULE 3: NEVER start your posts with the same repetitive introductory phrases. Be highly creative with your opening hooks (e.g., start with a bold claim, a short question, or a surprising statistic).
+
 Include 2-3 relevant hashtags at the bottom of each post. Do not wrap the response in quotes or include any preamble.`;
 
   if (postCount > 1) {
-    prompt += `\nCRITICAL: You are writing MULTIPLE posts. You MUST separate each distinct post exactly with this string on its own line: ---POST_SEPARATOR---. Make sure each post tackles a slightly different angle or perspective of the topic so they are distinct.`;
+    prompt += `\nCRITICAL MULTIPLE POSTS RULE: You are writing ${postCount} posts. You MUST separate each distinct post exactly with this string on its own line: ---POST_SEPARATOR---. 
+EXTREME DIVERSITY REQUIRED: Every single post MUST have a completely different structure, opening hook, and core angle. 
+- Post 1 could be a bold contrarian statement.
+- Post 2 could be a specific personal story or observation.
+- Post 3 could be a bulleted list of actionable takeaways.
+- Post 4 could be a future prediction.
+DO NOT repeat the same opening sentences. DO NOT sound repetitive. If the posts sound too similar, you have failed.`;
   }
 
   let generatedContent = '';
