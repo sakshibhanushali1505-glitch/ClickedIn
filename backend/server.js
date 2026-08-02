@@ -99,9 +99,9 @@ app.get('/api/auth/linkedin/callback', async (req, res) => {
     });
 
     const profile = {
-      name: profileResponse.data.name,
+      name: profileResponse.data.name || 'LinkedIn User',
       id: profileResponse.data.sub,
-      pictureUrl: profileResponse.data.picture
+      pictureUrl: profileResponse.data.picture || '',
     };
 
     await auth.establishLogin(res, profile, accessToken, meta);
@@ -163,13 +163,22 @@ app.post('/api/user/settings', auth.requireAuth, async (req, res) => {
 
 app.post('/api/user/automation/run', auth.requireAuth, async (req, res) => {
   try {
+    const settings = await db.getUserSettings(req.auth.userId);
+    if (!settings?.context || !String(settings.context).trim()) {
+      return res.status(400).json({
+        error: 'Add Work Experience in the Profile tab before running automation.',
+      });
+    }
     const success = await runDailyAutomation(req.auth.userId);
     if (!success) {
-      return res.status(500).json({ error: "Failed to run automation. The AI generation may be experiencing high demand." });
+      return res.status(500).json({
+        error: 'Failed to run automation. The AI generation may be experiencing high demand.',
+      });
     }
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Failed to run automation." });
+    console.error('automation/run error', err);
+    res.status(500).json({ error: 'Failed to run automation.' });
   }
 });
 
@@ -203,22 +212,28 @@ app.get('/api/connections/queue', auth.requireAuth, async (req, res) => {
 });
 
 app.get('/api/posts', auth.requireAuth, async (req, res) => {
-  let posts = await db.getPosts();
-  posts = posts.filter(p => p.userId === req.auth.userId);
-  
-  const activePosts = [];
-  for (const post of posts) {
-    const isPublished = post.status === 'published' || post.status === 'posted';
-    
-    if (isPublished) {
-      // Auto-delete published posts so they disappear from queue
-      await db.deletePost(post.id);
-    } else {
-      activePosts.push(post);
+  try {
+    let posts = await db.getPosts();
+    posts = posts.filter(p => p && p.userId === req.auth.userId);
+
+    const activePosts = [];
+    for (const post of posts) {
+      const isPublished = post.status === 'published' || post.status === 'posted';
+
+      if (isPublished) {
+        // Auto-delete published posts so they disappear from queue
+        await db.deletePost(post.id);
+      } else {
+        activePosts.push(post);
+      }
     }
+
+    activePosts.sort((a, b) => Number(b.id) - Number(a.id));
+    res.json(activePosts);
+  } catch (err) {
+    console.error('GET /api/posts failed', err);
+    res.status(500).json({ error: 'Failed to load posts' });
   }
-  
-  res.json(activePosts.sort((a, b) => b.id - a.id));
 });
 
 app.post('/api/posts', auth.requireAuth, async (req, res) => {
@@ -295,16 +310,21 @@ app.post('/api/posts', auth.requireAuth, async (req, res) => {
 
     const newPosts = contents.map((content, idx) => {
       let scheduledTime = null;
-      if (baseTime) {
-        scheduledTime = new Date(baseTime.getTime() + (idx * ((hoursGap * 60) + minutesGap) * 60 * 1000));
+      if (baseTime && !Number.isNaN(baseTime.getTime())) {
+        // Store ISO string so clients never receive raw Firestore Timestamps
+        scheduledTime = new Date(
+          baseTime.getTime() + (idx * ((hoursGap * 60) + minutesGap) * 60 * 1000)
+        ).toISOString();
       }
       return {
         id: Date.now() + idx,
         userId: ownerId,
-        topic, size, tone,
+        topic,
+        size,
+        tone,
         content,
         status: 'draft',
-        scheduledTime
+        scheduledTime,
       };
     });
 

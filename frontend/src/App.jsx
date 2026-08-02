@@ -9,6 +9,27 @@ import { trackActivity } from './lib/activity';
 // Send session cookie on every API call (multi-user auth)
 axios.defaults.withCredentials = true;
 
+/** Parse ISO string / Date / Firestore `{_seconds}` into a valid Date, or null. */
+function parseApiDate(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'object' && (value._seconds != null || value.seconds != null)) {
+    const seconds = value._seconds ?? value.seconds;
+    const nanos = value._nanoseconds ?? value.nanoseconds ?? 0;
+    const d = new Date(seconds * 1000 + Math.floor(nanos / 1e6));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Local datetime-local input value (YYYY-MM-DDTHH:mm). */
+function toDatetimeLocalValue(value, fallbackMs = Date.now() + 3600000) {
+  const d = parseApiDate(value) || new Date(fallbackMs);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -94,6 +115,12 @@ const LoginPage = ({ onLogin }) => {
             <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
             <span>Continue with LinkedIn</span>
           </button>
+          <a
+            href="/admin"
+            className="block text-xs text-slate-500 hover:text-cyan-400 transition-colors pt-2"
+          >
+            Admin login
+          </a>
         </div>
       </div>
     </div>
@@ -180,15 +207,19 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   const fetchQueue = async () => {
     try {
       const res = await axios.get('/api/posts');
-      const now = new Date();
+      const rows = Array.isArray(res.data) ? res.data : [];
       // Keep posts that are in the queue until the backend naturally removes them upon publishing
-      const activePosts = res.data.filter(p => {
+      const activePosts = rows.filter(p => {
+        if (!p || !p.id) return false;
         if (p.status === 'published' || p.status === 'posted') return false;
         return true;
       });
       setQueue(activePosts);
     } catch (err) {
       console.error("Error fetching queue", err);
+      if (err.response?.status === 401) {
+        window.location.reload();
+      }
     }
   };
 
@@ -370,15 +401,15 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             {queue.map(post => (
               <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 flex-wrap gap-2">
                     <span className="text-[10px] font-bold text-white bg-white/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-white/10">
-                      {post.topic}
+                      {post.topic || 'Untitled'}
                     </span>
                     <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-cyan-500/20">
-                      {post.tone}
+                      {post.tone || '—'}
                     </span>
                     <span className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-purple-500/20">
-                      {post.size}
+                      {post.size || '—'}
                     </span>
                   </div>
                   
@@ -390,14 +421,14 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                   ) : (
                     <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full flex items-center uppercase tracking-widest border border-emerald-500/20">
                       <Clock size={12} className="mr-2" />
-                      Scheduled: {new Date(post.scheduledTime).toLocaleString()}
+                      Scheduled: {parseApiDate(post.scheduledTime)?.toLocaleString() || '—'}
                     </span>
                   )}
                 </div>
                 
                 <textarea 
                   className="w-full h-36 bg-black/20 border border-white/5 rounded-xl p-4 text-[15px] focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/10 mb-4 resize-none text-slate-300 font-medium leading-relaxed transition-all"
-                  defaultValue={post.content}
+                  defaultValue={post.content || ''}
                   id={`content-${post.id}`}
                   spellCheck="false"
                 />
@@ -408,7 +439,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <input 
                         type="datetime-local" 
                         id={`time-${post.id}`} 
-                        defaultValue={post.scheduledTime ? new Date(new Date(post.scheduledTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                        defaultValue={toDatetimeLocalValue(post.scheduledTime)}
                         style={{ colorScheme: 'dark' }}
                         className="glass-input rounded-lg px-3 py-2 text-[13px] text-white cursor-pointer"
                       />
@@ -746,7 +777,7 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <input 
                         type="datetime-local" 
                         id="batch-time"
-                        defaultValue={new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                        defaultValue={toDatetimeLocalValue(null)}
                         style={{ colorScheme: 'dark' }}
                         className="glass-input rounded-xl px-4 py-2.5 text-[14px] text-white cursor-pointer w-full sm:w-auto border-white/10"
                       />
@@ -1085,6 +1116,15 @@ export default function App() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('success') === 'linkedin_connected';
+    const authError = urlParams.get('error');
+    if (authError) {
+      toast.error(
+        authError === 'token_failed'
+          ? 'LinkedIn login failed — please try again.'
+          : 'Login failed — please try again.'
+      );
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
     if (justConnected) {
       trackActivity('login', { label: 'linkedin_connected' });
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -1146,29 +1186,24 @@ export default function App() {
     );
   }
 
-  if (!authReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#07080A] text-slate-400 text-sm">
-        Restoring your session…
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <>
-        <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
-        <ActivityTracker userProfile={null} />
-        <LoginPage onLogin={handleLogin} />
-      </>
-    );
-  }
-
   return (
     <>
       <Toaster position="bottom-right" toastOptions={{ style: { background: '#1e293b', color: '#fff' } }} />
-      <ActivityTracker userProfile={userProfile} />
-      <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />
+      {!authReady ? (
+        <div className="min-h-screen flex items-center justify-center bg-[#07080A] text-slate-400 text-sm">
+          Restoring your session…
+        </div>
+      ) : !isAuthenticated ? (
+        <>
+          <ActivityTracker userProfile={null} />
+          <LoginPage onLogin={handleLogin} />
+        </>
+      ) : (
+        <>
+          <ActivityTracker userProfile={userProfile} />
+          <ClickedInDashboard userProfile={userProfile} onLogout={handleLogout} />
+        </>
+      )}
     </>
   );
 }
