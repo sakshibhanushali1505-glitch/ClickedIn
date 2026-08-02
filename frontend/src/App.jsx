@@ -9,25 +9,102 @@ import { trackActivity } from './lib/activity';
 // Send session cookie on every API call (multi-user auth)
 axios.defaults.withCredentials = true;
 
+/** Build stamp — change forces a new hashed JS bundle (cache bust). */
+export const CLICKEDIN_BUILD = '2026-08-02c';
+
 /** Parse ISO string / Date / Firestore `{_seconds}` into a valid Date, or null. */
 function parseApiDate(value) {
-  if (value == null || value === '') return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  if (typeof value === 'object' && (value._seconds != null || value.seconds != null)) {
-    const seconds = value._seconds ?? value.seconds;
-    const nanos = value._nanoseconds ?? value.nanoseconds ?? 0;
-    const d = new Date(seconds * 1000 + Math.floor(nanos / 1e6));
+  try {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (typeof value === 'object') {
+      if (typeof value.toDate === 'function') {
+        const d = value.toDate();
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      if (value._seconds != null || value.seconds != null) {
+        const seconds = Number(value._seconds ?? value.seconds);
+        const nanos = Number(value._nanoseconds ?? value.nanoseconds ?? 0);
+        if (!Number.isFinite(seconds)) return null;
+        const d = new Date(seconds * 1000 + Math.floor(nanos / 1e6));
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      return null;
+    }
+    if (typeof value === 'number') {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(String(value));
     return Number.isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
   }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Local datetime-local input value (YYYY-MM-DDTHH:mm). */
+/** Local datetime-local input value (YYYY-MM-DDTHH:mm). Never throws. */
 function toDatetimeLocalValue(value, fallbackMs = Date.now() + 3600000) {
-  const d = parseApiDate(value) || new Date(fallbackMs);
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
+  try {
+    const d = parseApiDate(value) || new Date(fallbackMs);
+    if (Number.isNaN(d.getTime())) return toDatetimeLocalValue(null, Date.now() + 3600000);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    const out = local.toISOString().slice(0, 16);
+    return out || '';
+  } catch {
+    try {
+      const d = new Date(Date.now() + 3600000);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    } catch {
+      return '';
+    }
+  }
+}
+
+/** Normalize API posts so Schedule UI never sees raw Timestamps. */
+function normalizePostForUi(p) {
+  if (!p || typeof p !== 'object') return null;
+  const scheduled = parseApiDate(p.scheduledTime);
+  return {
+    ...p,
+    id: p.id,
+    topic: p.topic || 'Untitled',
+    tone: p.tone || '',
+    size: p.size || '',
+    content: typeof p.content === 'string' ? p.content : '',
+    status: p.status || 'draft',
+    scheduledTime: scheduled ? scheduled.toISOString() : null,
+  };
+}
+
+class ScheduleErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error) {
+    console.error('Schedule UI crash caught:', error);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 text-center space-y-3">
+          <p className="text-red-400 font-bold">Something went wrong showing your posts.</p>
+          <p className="text-slate-400 text-sm">Your drafts are safe. Reload to continue.</p>
+          <button
+            type="button"
+            className="px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+            onClick={() => window.location.reload()}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 const CustomDropdown = ({ icon: Icon, options, value, onChange, badge, accentColor }) => {
@@ -208,15 +285,17 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     try {
       const res = await axios.get('/api/posts');
       const rows = Array.isArray(res.data) ? res.data : [];
-      // Keep posts that are in the queue until the backend naturally removes them upon publishing
-      const activePosts = rows.filter(p => {
-        if (!p || !p.id) return false;
-        if (p.status === 'published' || p.status === 'posted') return false;
-        return true;
-      });
+      const activePosts = rows
+        .map(normalizePostForUi)
+        .filter((p) => {
+          if (!p || p.id == null) return false;
+          if (p.status === 'published' || p.status === 'posted') return false;
+          return true;
+        });
       setQueue(activePosts);
     } catch (err) {
       console.error("Error fetching queue", err);
+      setQueue([]);
       if (err.response?.status === 401) {
         window.location.reload();
       }
@@ -271,18 +350,19 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         size,
         tone,
         count: postCount,
-        baseTime: new Date().toISOString(),
+        // Do not pre-attach schedule times on drafts — avoids Timestamp/UI edge cases
         hoursGap,
-        minutesGap
+        minutesGap,
       });
       toast.success(`${postCount} post(s) generated successfully!`, { id: toastId });
       setActiveTab('schedule');
-      fetchQueue();
+      await fetchQueue();
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Error connecting to AI generation service.";
       toast.error(errorMsg, { id: toastId });
+    } finally {
+      setIsGenerating(false);
     }
-    setIsGenerating(false);
   };
 
   const handleStartTrial = async () => {
@@ -327,32 +407,39 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
   };
 
   const handleApproveAll = async () => {
-    const drafts = queue.filter(p => p.status === 'draft');
+    const drafts = (Array.isArray(queue) ? queue : []).filter(p => p && p.status === 'draft');
     if (drafts.length === 0) {
       toast.error("No pending drafts to approve!");
       return;
     }
-    
+
     const batchInputEl = document.getElementById('batch-time');
-    let startTimeStr = batchInputEl ? batchInputEl.value : null;
-    
+    const startTimeStr = batchInputEl ? batchInputEl.value : null;
+
     if (!startTimeStr) {
       toast.error("Please set a master start time for the batch!");
       return;
     }
-    
+
     const baseTimeObj = new Date(startTimeStr);
-    
+    if (Number.isNaN(baseTimeObj.getTime())) {
+      toast.error("Invalid batch start time.");
+      return;
+    }
+
     try {
       await Promise.all(drafts.map((post, index) => {
-        const scheduledTimeObj = new Date(baseTimeObj.getTime() + (index * ((hoursGap * 60) + minutesGap) * 60 * 1000));
+        const scheduledTimeObj = new Date(
+          baseTimeObj.getTime() + (index * ((Number(hoursGap) || 0) * 60 + (Number(minutesGap) || 0)) * 60 * 1000)
+        );
+        const contentEl = document.getElementById(`content-${post.id}`);
         return axios.put(`/api/posts/${post.id}/approve`, {
-          content: document.getElementById(`content-${post.id}`).value,
-          scheduledTime: scheduledTimeObj.toISOString()
+          content: contentEl ? contentEl.value : post.content,
+          scheduledTime: scheduledTimeObj.toISOString(),
         });
       }));
       toast.success(`Successfully scheduled ${drafts.length} post(s)!`);
-      fetchQueue();
+      await fetchQueue();
     } catch (err) {
       toast.error("Failed to approve batch");
       console.error(err);
@@ -380,11 +467,13 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
     }
   };
 
-  const draftCount = queue.filter(p => p.status === 'draft').length;
+  const safeQueue = Array.isArray(queue) ? queue : [];
+  const draftCount = safeQueue.filter(p => p && p.status === 'draft').length;
 
   const renderPostsQueueList = () => (
+    <ScheduleErrorBoundary>
     <div className="p-8 flex-1 flex flex-col">
-      {queue.length === 0 ? (
+      {safeQueue.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
           <div className="relative w-28 h-28 mb-6">
              <div className="absolute inset-0 border-2 border-dashed border-slate-700 rounded-full animate-[spin_10s_linear_infinite]"></div>
@@ -398,8 +487,8 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
         </div>
       ) : (
          <div className="space-y-6">
-            {queue.map(post => (
-              <div key={post.id} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
+            {safeQueue.map(post => (
+              <div key={String(post.id)} className={`p-6 rounded-2xl border ${post.status === 'draft' ? 'bg-white/[0.03] border-white/10' : 'bg-emerald-500/10 border-emerald-500/20'} transition-all duration-300 hover:border-cyan-500/30`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 space-y-3 sm:space-y-0">
                   <div className="flex items-center space-x-3 flex-wrap gap-2">
                     <span className="text-[10px] font-bold text-white bg-white/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-white/10">
@@ -418,10 +507,14 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-2 animate-pulse"></span>
                       Pending Review
                     </span>
-                  ) : (
+                  ) : post.status === 'approved' ? (
                     <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full flex items-center uppercase tracking-widest border border-emerald-500/20">
                       <Clock size={12} className="mr-2" />
                       Scheduled: {parseApiDate(post.scheduledTime)?.toLocaleString() || '—'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-300 bg-white/5 px-3 py-1.5 rounded-full uppercase tracking-widest border border-white/10">
+                      {post.status}
                     </span>
                   )}
                 </div>
@@ -482,7 +575,9 @@ const ClickedInDashboard = ({ userProfile, onLogout }) => {
             ))}
           </div>
       )}
+      <p className="text-[10px] text-slate-600 text-center mt-6">build {CLICKEDIN_BUILD}</p>
     </div>
+    </ScheduleErrorBoundary>
   );
 
   return (
